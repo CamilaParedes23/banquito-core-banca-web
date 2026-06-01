@@ -56,7 +56,7 @@ interface Account {
 
 export default function Accounts() {
   const navigate = useNavigate();
-  const [selectedAccount, setSelectedAccount] = useState(0);
+  const [selectedAccount, setSelectedAccount] = useState(1);
   const [balanceVisibility, setBalanceVisibility] = useState<Record<number, boolean>>({});
 
   const accounts: Account[] = [
@@ -67,7 +67,7 @@ export default function Accounts() {
       balance: 5230.50,
       type: 'Corriente',
       icon: <AccountBalance />,
-      color: '#0066CC',
+      color: '#0f3460',
       movements: 245,
       transactions: [
         {
@@ -124,7 +124,7 @@ export default function Accounts() {
       balance: 12840.00,
       type: 'Ahorros',
       icon: <Savings />,
-      color: '#10B981',
+      color: '#D4AF37',
       movements: 89,
       interestRate: 4.5,
       transactions: [
@@ -170,10 +170,15 @@ export default function Accounts() {
     return balanceVisibility[accountId] !== false;
   };
 
+  const formatAccountNumber = (accountNumber: string) => {
+    const lastFour = accountNumber.slice(-4);
+    return `Nº ********${lastFour}`;
+  };
+
   return (
     <Layout>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: '#0066CC', mb: 1 }}>
+        <Typography variant="h4" sx={{ fontWeight: 700, color: '#0f3460', mb: 1 }}>
           Mis Cuentas
         </Typography>
         <Typography variant="body1" sx={{ color: '#666' }}>
@@ -182,240 +187,217 @@ export default function Accounts() {
       </Box>
 
       <Grid container spacing={3}>
-        <Grid item xs={12}>
-          <Card sx={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid #f0f0f0' }}>
-            <CardContent sx={{ p: 0 }}>
-              <Tabs
-                value={selectedAccount}
-                onChange={(_, newValue) => setSelectedAccount(newValue)}
-                sx={{
-                  borderBottom: '1px solid #e5e7eb',
-                  px: 3,
-                  '& .MuiTab-root': {
-                    textTransform: 'none',
+        {accounts.map((account, index) => (
+          <Grid size={{ xs: 12, md: 6 }} key={account.id}>
+            <Box
+              onClick={() => setSelectedAccount(account.id)}
+              sx={{
+                p: 3,
+                borderRadius: 3,
+                background: `linear-gradient(135deg, ${account.color} 0%, ${account.color}dd 100%)`,
+                color: 'white',
+                cursor: 'pointer',
+                border: selectedAccount === account.id ? '3px solid #D4AF37' : '3px solid transparent',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 2,
+                    bgcolor: 'rgba(255,255,255,0.2)',
+                    mr: 2,
+                  }}
+                >
+                  {account.icon}
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                  {account.type}
+                </Typography>
+              </Box>
+
+              <Typography variant="caption" sx={{ opacity: 0.9, display: 'block', mb: 0.5 }}>
+                Número de Cuenta
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
+                {formatAccountNumber(account.number)}
+              </Typography>
+
+              <Divider sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 3 }} />
+
+              <Typography variant="caption" sx={{ opacity: 0.9, display: 'block', mb: 1 }}>
+                Saldo Disponible
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                  {isBalanceVisible(account.id)
+                    ? `$${account.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                    : '$ •••••••'
+                  }
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={() => toggleBalanceVisibility(account.id)}
+                  sx={{ color: 'white' }}
+                >
+                  {isBalanceVisible(account.id) ? (
+                    <Visibility fontSize="small" />
+                  ) : (
+                    <VisibilityOff fontSize="small" />
+                  )}
+                </IconButton>
+              </Box>
+              <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                USD
+              </Typography>
+
+              {account.interestRate && (
+                <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.15)' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <TrendingUp sx={{ fontSize: 16 }} />
+                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                      {account.interestRate}% Tasa Anual
+                    </Typography>
+                  </Box>
+                </Box>
+              )}
+
+              <Box sx={{ display: 'flex', gap: 1.5, mt: 3 }}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  endIcon={<ArrowForward fontSize="small" />}
+                  onClick={() => navigate('/transferencias')}
+                  sx={{
+                    bgcolor: '#D4AF37',
+                    color: '#0f3460',
                     fontWeight: 600,
-                    fontSize: '0.95rem',
-                  },
+                    '&:hover': {
+                      bgcolor: '#B89928',
+                    },
+                  }}
+                >
+                  Transferir
+                </Button>
+                <IconButton
+                  sx={{
+                    bgcolor: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    '&:hover': {
+                      bgcolor: 'rgba(255,255,255,0.3)',
+                    },
+                  }}
+                >
+                  <Download />
+                </IconButton>
+              </Box>
+            </Box>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Grid size={12} sx={{ mt: 3 }}>
+        <Card sx={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid #f0f0f0' }}>
+          <CardContent sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f3460' }}>
+                Últimos Movimientos - {accounts.find(a => a.id === selectedAccount)?.name}
+              </Typography>
+              <Button
+                size="small"
+                startIcon={<Download />}
+                sx={{
+                  color: '#0f3460',
+                  fontWeight: 600,
+                  textTransform: 'none',
                 }}
               >
-                {accounts.map((account, index) => (
-                  <Tab key={account.id} label={account.name} />
-                ))}
-              </Tabs>
+                Exportar
+              </Button>
+            </Box>
 
-              {accounts.map((account, index) => (
-                <Box
-                  key={account.id}
-                  role="tabpanel"
-                  hidden={selectedAccount !== index}
-                  sx={{ p: 3 }}
-                >
-                  {selectedAccount === index && (
-                    <Grid container spacing={3}>
-                      <Grid item xs={12} md={4}>
-                        <Box
-                          sx={{
-                            p: 3,
-                            borderRadius: 3,
-                            background: `linear-gradient(135deg, ${account.color} 0%, ${account.color}dd 100%)`,
-                            color: 'white',
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                            <Box
-                              sx={{
-                                p: 1.5,
-                                borderRadius: 2,
-                                bgcolor: 'rgba(255,255,255,0.2)',
-                                mr: 2,
-                              }}
-                            >
-                              {account.icon}
-                            </Box>
-                            <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                              {account.type}
-                            </Typography>
-                          </Box>
-
-                          <Typography variant="caption" sx={{ opacity: 0.9, display: 'block', mb: 0.5 }}>
-                            Número de Cuenta
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
-                            {account.number}
-                          </Typography>
-
-                          <Divider sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 3 }} />
-
-                          <Typography variant="caption" sx={{ opacity: 0.9, display: 'block', mb: 1 }}>
-                            Saldo Disponible
-                          </Typography>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                              {isBalanceVisible(account.id)
-                                ? `$${account.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                                : '$ •••••••'
-                              }
-                            </Typography>
-                            <IconButton
-                              size="small"
-                              onClick={() => toggleBalanceVisibility(account.id)}
-                              sx={{ color: 'white' }}
-                            >
-                              {isBalanceVisible(account.id) ? (
-                                <Visibility fontSize="small" />
-                              ) : (
-                                <VisibilityOff fontSize="small" />
-                              )}
-                            </IconButton>
-                          </Box>
-                          <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                            USD
-                          </Typography>
-
-                          {account.interestRate && (
-                            <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.15)' }}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <TrendingUp sx={{ fontSize: 16 }} />
-                                <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                                  {account.interestRate}% Tasa Anual
-                                </Typography>
-                              </Box>
-                            </Box>
-                          )}
-
-                          <Box sx={{ display: 'flex', gap: 1.5, mt: 3 }}>
-                            <Button
-                              fullWidth
-                              variant="contained"
-                              endIcon={<ArrowForward fontSize="small" />}
-                              onClick={() => navigate('/transferencias')}
-                              sx={{
-                                bgcolor: '#10B981',
-                                color: 'white',
-                                fontWeight: 600,
-                                '&:hover': {
-                                  bgcolor: '#059669',
-                                },
-                              }}
-                            >
-                              Transferir
-                            </Button>
-                            <IconButton
-                              sx={{
-                                bgcolor: 'rgba(255,255,255,0.2)',
-                                color: 'white',
-                                '&:hover': {
-                                  bgcolor: 'rgba(255,255,255,0.3)',
-                                },
-                              }}
-                            >
-                              <Download />
-                            </IconButton>
-                          </Box>
-                        </Box>
-                      </Grid>
-
-                      <Grid item xs={12} md={8}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                          <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a1a' }}>
-                            Últimos Movimientos
-                          </Typography>
-                          <Button
-                            size="small"
-                            startIcon={<Download />}
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f8f9fa' }}>
+                    <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Fecha</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Descripción</TableCell>
+                    <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Referencia</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600, color: '#0f3460' }}>Monto</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600, color: '#0f3460' }}>Saldo</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 600, color: '#0f3460' }}>Estado</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {accounts.find(a => a.id === selectedAccount)?.transactions.map((transaction) => (
+                    <TableRow
+                      key={transaction.id}
+                      sx={{
+                        '&:hover': { bgcolor: '#f8f9fa' },
+                        '&:last-child td': { border: 0 },
+                      }}
+                    >
+                      <TableCell>
+                        <Typography variant="body2" sx={{ color: '#666' }}>
+                          {transaction.date}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#333' }}>
+                          {transaction.description}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" sx={{ color: '#999' }}>
+                          {transaction.reference}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                          <Typography
+                            variant="body2"
                             sx={{
-                              color: '#0066CC',
-                              fontWeight: 600,
-                              textTransform: 'none',
+                              fontWeight: 700,
+                              color: transaction.amount > 0 ? '#D4AF37' : '#333',
                             }}
                           >
-                            Exportar
-                          </Button>
+                            {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          </Typography>
+                          {transaction.amount > 0 ? (
+                            <TrendingUp sx={{ color: '#D4AF37', fontSize: 16 }} />
+                          ) : (
+                            <TrendingDown sx={{ color: '#999', fontSize: 16 }} />
+                          )}
                         </Box>
-
-                        <TableContainer>
-                          <Table>
-                            <TableHead>
-                              <TableRow sx={{ bgcolor: '#f8f9fa' }}>
-                                <TableCell sx={{ fontWeight: 600, color: '#0066CC' }}>Fecha</TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#0066CC' }}>Descripción</TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: '#0066CC' }}>Referencia</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 600, color: '#0066CC' }}>Monto</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 600, color: '#0066CC' }}>Saldo</TableCell>
-                                <TableCell align="center" sx={{ fontWeight: 600, color: '#0066CC' }}>Estado</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {account.transactions.map((transaction) => (
-                                <TableRow
-                                  key={transaction.id}
-                                  sx={{
-                                    '&:hover': { bgcolor: '#f8f9fa' },
-                                    '&:last-child td': { border: 0 },
-                                  }}
-                                >
-                                  <TableCell>
-                                    <Typography variant="body2" sx={{ color: '#666' }}>
-                                      {transaction.date}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#333' }}>
-                                      {transaction.description}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Typography variant="caption" sx={{ color: '#999' }}>
-                                      {transaction.reference}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                                      <Typography
-                                        variant="body2"
-                                        sx={{
-                                          fontWeight: 700,
-                                          color: transaction.amount > 0 ? '#10B981' : '#333',
-                                        }}
-                                      >
-                                        {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                      </Typography>
-                                      {transaction.amount > 0 ? (
-                                        <TrendingUp sx={{ color: '#10B981', fontSize: 16 }} />
-                                      ) : (
-                                        <TrendingDown sx={{ color: '#999', fontSize: 16 }} />
-                                      )}
-                                    </Box>
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Typography variant="body2" sx={{ color: '#666' }}>
-                                      ${transaction.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="center">
-                                    <Chip
-                                      label={transaction.status}
-                                      size="small"
-                                      sx={{
-                                        bgcolor: '#d1fae5',
-                                        color: '#10B981',
-                                        fontWeight: 600,
-                                      }}
-                                    />
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      </Grid>
-                    </Grid>
-                  )}
-                </Box>
-              ))}
-            </CardContent>
-          </Card>
-        </Grid>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" sx={{ color: '#666' }}>
+                          ${transaction.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={transaction.status}
+                          size="small"
+                          sx={{
+                            bgcolor: '#fef3c7',
+                            color: '#D4AF37',
+                            fontWeight: 600,
+                          }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </CardContent>
+        </Card>
       </Grid>
     </Layout>
   );
