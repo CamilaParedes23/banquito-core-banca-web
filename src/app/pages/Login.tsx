@@ -15,7 +15,6 @@ import {
 import {
   Visibility,
   VisibilityOff,
-  AccountBalance,
   TrendingUp,
   Security,
   Phone,
@@ -65,7 +64,7 @@ export default function Login() {
       <Box
         sx={{
           width: '50%',
-          background: 'linear-gradient(135deg, #0066CC 0%, #0052A3 100%)',
+          background: 'linear-gradient(135deg, #0f3460 0%, #16213e 100%)',
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           justifyContent: 'center',
@@ -107,41 +106,42 @@ export default function Login() {
               sx={{
                 p: 2,
                 borderRadius: '50%',
-                bgcolor: 'rgba(16, 185, 129, 0.2)',
-                border: '2px solid rgba(16, 185, 129, 0.4)',
+                bgcolor: 'rgba(212, 175, 55, 0.15)',
+                border: '2px solid rgba(212, 175, 55, 0.3)',
               }}
             >
-              <Security sx={{ fontSize: 40, color: '#10B981' }} />
+              <Security sx={{ fontSize: 40, color: '#D4AF37' }} />
             </Box>
             <Box
               sx={{
                 p: 2,
                 borderRadius: '50%',
-                bgcolor: 'rgba(16, 185, 129, 0.2)',
-                border: '2px solid rgba(16, 185, 129, 0.4)',
+                bgcolor: 'rgba(212, 175, 55, 0.15)',
+                border: '2px solid rgba(212, 175, 55, 0.3)',
               }}
             >
-              <TrendingUp sx={{ fontSize: 40, color: '#10B981' }} />
+              <TrendingUp sx={{ fontSize: 40, color: '#D4AF37' }} />
             </Box>
             <Box
               sx={{
                 p: 2,
                 borderRadius: '50%',
-                bgcolor: 'rgba(16, 185, 129, 0.2)',
-                border: '2px solid rgba(16, 185, 129, 0.4)',
+                bgcolor: 'rgba(212, 175, 55, 0.15)',
+                border: '2px solid rgba(212, 175, 55, 0.3)',
               }}
             >
-              <Phone sx={{ fontSize: 40, color: '#10B981' }} />
+              <Phone sx={{ fontSize: 40, color: '#D4AF37' }} />
             </Box>
           </Box>
 
           <Typography
-            variant="h3"
+            variant="h2"
             sx={{
               color: 'white',
               fontWeight: 700,
               mb: 3,
               textShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              letterSpacing: 0.5,
             }}
           >
             Tu banco digital, donde sea que estés
@@ -180,8 +180,8 @@ export default function Login() {
                     width: 8,
                     height: 8,
                     borderRadius: '50%',
-                    bgcolor: '#10B981',
-                    boxShadow: '0 0 10px rgba(16, 185, 129, 0.5)',
+                    bgcolor: '#D4AF37',
+                    boxShadow: '0 0 10px rgba(212, 175, 55, 0.5)',
                   }}
                 />
                 <Typography variant="body1" sx={{ fontWeight: 500 }}>
@@ -215,19 +215,14 @@ export default function Login() {
           <CardContent sx={{ p: 5 }}>
             {/* Logo */}
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 4 }}>
-              <AccountBalance sx={{ fontSize: 48, color: '#0066CC', mr: 2 }} />
-              <Typography
-                variant="h4"
+              <Box
+                component="img"
+                src="/Baco.png"
+                alt="Banco BanQuito"
                 sx={{
-                  fontWeight: 700,
-                  background: 'linear-gradient(135deg, #0066CC 0%, #0052A3 100%)',
-                  backgroundClip: 'text',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
+                  height: 100,
                 }}
-              >
-                Banco BanQuito
-              </Typography>
+              />
             </Box>
 
             {/* Greeting */}
@@ -236,21 +231,11 @@ export default function Login() {
               sx={{
                 fontWeight: 600,
                 color: '#1a1a1a',
-                mb: 1,
+                mb: 3,
                 textAlign: 'center',
               }}
             >
-              ¡Hola! Te damos la bienvenida
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: '#666',
-                mb: 4,
-                textAlign: 'center',
-              }}
-            >
-              a tu Banca Web
+              Inicia sesión en tu cuenta
             </Typography>
 
             {/* Error Alert */}
@@ -296,11 +281,11 @@ export default function Login() {
                     href="#"
                     underline="hover"
                     sx={{
-                      color: '#0066CC',
+                      color: '#0f3460',
                       fontSize: '0.875rem',
                       fontWeight: 500,
                       '&:hover': {
-                        color: '#0052A3',
+                        color: '#16213e',
                       },
                     }}
                   >
@@ -354,11 +339,11 @@ export default function Login() {
                   fontSize: '1rem',
                   fontWeight: 600,
                   textTransform: 'none',
-                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  background: 'linear-gradient(135deg, #0f3460 0%, #16213e 100%)',
+                  boxShadow: '0 4px 12px rgba(15, 52, 96, 0.3)',
                   '&:hover': {
-                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                    boxShadow: '0 6px 16px rgba(16, 185, 129, 0.4)',
+                    background: 'linear-gradient(135deg, #16213e 0%, #1a1a2e 100%)',
+                    boxShadow: '0 6px 16px rgba(15, 52, 96, 0.4)',
                   },
                   '&:disabled': {
                     background: '#e5e7eb',
@@ -366,7 +351,7 @@ export default function Login() {
                   },
                 }}
               >
-                {loading ? 'Ingresando...' : 'Ingresar a mi cuenta'}
+                {loading ? 'Ingresando...' : 'Ingresar'}
               </Button>
             </form>
 
@@ -385,11 +370,11 @@ export default function Login() {
                 href="#"
                 underline="hover"
                 sx={{
-                  color: '#0066CC',
+                  color: '#0f3460',
                   fontSize: '0.95rem',
                   fontWeight: 600,
                   '&:hover': {
-                    color: '#0052A3',
+                    color: '#16213e',
                   },
                 }}
               >
@@ -403,13 +388,13 @@ export default function Login() {
                 mt: 4,
                 p: 2,
                 borderRadius: 2,
-                bgcolor: '#f0f9ff',
-                border: '1px solid #bfdbfe',
+                bgcolor: '#f8f9fa',
+                border: '1px solid #e9ecef',
               }}
             >
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                <Security sx={{ fontSize: 18, color: '#0066CC' }} />
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#0066CC' }}>
+                <Security sx={{ fontSize: 18, color: '#0f3460' }} />
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f3460' }}>
                   Conexión Segura
                 </Typography>
               </Box>

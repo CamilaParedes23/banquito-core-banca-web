@@ -43,10 +43,10 @@ export default function Layout({ children }: LayoutProps) {
   ];
 
   const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0066CC' }}>
-      <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
-        <AccountBalance sx={{ color: '#10B981', fontSize: 32 }} />
-        <Typography variant="h6" sx={{ color: 'white', fontWeight: 600 }}>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0f3460' }}>
+      <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid rgba(212, 175, 55, 0.2)' }}>
+        <AccountBalance sx={{ color: '#D4AF37', fontSize: 32 }} />
+        <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, letterSpacing: 0.5 }}>
           Banco BanQuito
         </Typography>
       </Box>
@@ -59,22 +59,24 @@ export default function Layout({ children }: LayoutProps) {
               selected={location.pathname === item.path}
               sx={{
                 borderRadius: 2,
-                color: 'white',
+                color: 'rgba(255,255,255,0.8)',
                 '&.Mui-selected': {
-                  bgcolor: 'rgba(16, 185, 129, 0.15)',
+                  bgcolor: 'rgba(212, 175, 55, 0.15)',
+                  color: '#D4AF37',
                   '&:hover': {
-                    bgcolor: 'rgba(16, 185, 129, 0.25)',
+                    bgcolor: 'rgba(212, 175, 55, 0.25)',
                   },
                 },
                 '&:hover': {
-                  bgcolor: 'rgba(255, 255, 255, 0.08)',
+                  bgcolor: 'rgba(255, 255, 255, 0.05)',
+                  color: 'white',
                 },
               }}
             >
-              <ListItemIcon sx={{ color: location.pathname === item.path ? '#10B981' : 'white', minWidth: 40 }}>
+              <ListItemIcon sx={{ color: location.pathname === item.path ? '#D4AF37' : 'rgba(255,255,255,0.6)', minWidth: 40 }}>
                 {item.icon}
               </ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemText primary={item.text} sx={{ '& .MuiTypography-root': { fontWeight: 500 } }} />
             </ListItemButton>
           </ListItem>
         ))}
@@ -82,7 +84,7 @@ export default function Layout({ children }: LayoutProps) {
       <Divider sx={{ bgcolor: 'rgba(255,255,255,0.1)' }} />
       <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
-          <Avatar sx={{ bgcolor: '#10B981', width: 40, height: 40 }}>JD</Avatar>
+          <Avatar sx={{ bgcolor: '#D4AF37', width: 40, height: 40, color: '#0f3460', fontWeight: 700 }}>JD</Avatar>
           <Box sx={{ flex: 1 }}>
             <Typography variant="body2" sx={{ color: 'white', fontWeight: 600 }}>
               Juan Díaz
@@ -94,7 +96,7 @@ export default function Layout({ children }: LayoutProps) {
   );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f5f7fa' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#f8f9fa' }}>
       <AppBar
         position="fixed"
         elevation={0}
@@ -106,29 +108,15 @@ export default function Layout({ children }: LayoutProps) {
         }}
       >
         <Toolbar sx={{ py: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexGrow: 1 }}>
-            <Typography
-              variant="h6"
-              noWrap
-              component="div"
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexGrow: 1 }}>
+            <Box
+              component="img"
+              src="/lateral.png"
+              alt="Banco BanQuito"
               sx={{
-                color: '#1a1a1a',
-                fontWeight: 700,
-                letterSpacing: '-0.5px',
+                height: 80,
               }}
-            >
-              Banca Web Personas
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: '#999',
-                fontWeight: 500,
-                ml: 1,
-              }}
-            >
-              Banco BanQuito
-            </Typography>
+            />
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <IconButton
@@ -136,7 +124,7 @@ export default function Layout({ children }: LayoutProps) {
                 color: '#666',
                 '&:hover': {
                   bgcolor: '#f5f5f5',
-                  color: '#0066CC',
+                  color: '#0f3460',
                 },
               }}
             >
@@ -154,7 +142,7 @@ export default function Layout({ children }: LayoutProps) {
                 ml: 1,
               }}
             >
-              <Avatar sx={{ bgcolor: '#0066CC', width: 32, height: 32, fontSize: '0.9rem' }}>
+              <Avatar sx={{ bgcolor: '#0f3460', width: 32, height: 32, fontSize: '0.9rem' }}>
                 JD
               </Avatar>
               <Box>

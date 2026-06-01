@@ -73,12 +73,12 @@ export default function Dashboard() {
     switch (type.toLowerCase()) {
       case 'savings':
       case 'ahorros':
-        return '#10B981';
+        return '#D4AF37';
       case 'credit':
       case 'credito':
         return '#e53935';
       default:
-        return '#0066CC';
+        return '#0f3460';
     }
   };
 
@@ -138,7 +138,7 @@ export default function Dashboard() {
     <Layout>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: '#0066CC', mb: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700, color: '#0f3460', mb: 1 }}>
             Panel Consolidado
           </Typography>
           <Typography variant="body1" sx={{ color: '#666' }}>
@@ -149,7 +149,7 @@ export default function Dashboard() {
           startIcon={<Refresh />}
           onClick={fetchAccounts}
           disabled={loading}
-          sx={{ color: '#0066CC' }}
+          sx={{ color: '#0f3460' }}
         >
           Actualizar
         </Button>
@@ -163,12 +163,12 @@ export default function Dashboard() {
 
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-          <CircularProgress sx={{ color: '#0066CC' }} />
+          <CircularProgress sx={{ color: '#0f3460' }} />
         </Box>
       ) : (
         <Grid container spacing={3}>
           {accounts.map((account, index) => (
-          <Grid item xs={12} md={6} lg={4} key={index}>
+          <Grid size={{ xs: 12, md: 6, lg: 4 }} key={index}>
             <Card
               sx={{
                 height: '100%',
@@ -280,8 +280,8 @@ export default function Dashboard() {
                     label={account.status === 'ACTIVE' ? 'Activa' : account.status}
                     size="small"
                     sx={{
-                      bgcolor: account.status === 'ACTIVE' ? '#d1fae5' : '#ffebee',
-                      color: account.status === 'ACTIVE' ? '#10B981' : '#e53935',
+                      bgcolor: account.status === 'ACTIVE' ? '#fef3c7' : '#ffebee',
+                      color: account.status === 'ACTIVE' ? '#D4AF37' : '#e53935',
                       fontWeight: 600,
                       fontSize: '0.7rem',
                       height: 24,
@@ -297,17 +297,17 @@ export default function Dashboard() {
                     endIcon={<ArrowForward fontSize="small" />}
                     onClick={() => navigate('/transferencias')}
                     sx={{
-                      bgcolor: '#10B981',
+                      bgcolor: '#0f3460',
                       color: 'white',
                       fontWeight: 600,
                       fontSize: '0.8rem',
                       py: 1,
                       textTransform: 'none',
                       borderRadius: 2,
-                      boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                      boxShadow: '0 2px 8px rgba(15, 52, 96, 0.25)',
                       '&:hover': {
-                        bgcolor: '#059669',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                        bgcolor: '#16213e',
+                        boxShadow: '0 4px 12px rgba(15, 52, 96, 0.35)',
                       },
                     }}
                   >
@@ -319,15 +319,15 @@ export default function Dashboard() {
                     endIcon={<Receipt fontSize="small" />}
                     onClick={() => navigate('/cuentas')}
                     sx={{
-                      borderColor: '#0066CC',
-                      color: '#0066CC',
+                      borderColor: '#0f3460',
+                      color: '#0f3460',
                       fontWeight: 600,
                       fontSize: '0.8rem',
                       py: 1,
                       textTransform: 'none',
                       borderRadius: 2,
                       '&:hover': {
-                        borderColor: '#0052A3',
+                        borderColor: '#16213e',
                         bgcolor: '#f0f7ff',
                       },
                     }}
@@ -340,7 +340,7 @@ export default function Dashboard() {
           </Grid>
           ))}
 
-        <Grid item xs={12} lg={8}>
+        <Grid size={{ xs: 12, lg: 8 }}>
           <Card sx={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid #f0f0f0' }}>
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -352,7 +352,7 @@ export default function Dashboard() {
                   endIcon={<ArrowForward fontSize="small" />}
                   onClick={() => navigate('/cuentas')}
                   sx={{
-                    color: '#0066CC',
+                    color: '#0f3460',
                     fontWeight: 600,
                     textTransform: 'none',
                     '&:hover': {
@@ -407,14 +407,14 @@ export default function Dashboard() {
                       variant="body1"
                       sx={{
                         fontWeight: 700,
-                        color: transaction.amount > 0 ? '#10B981' : '#1a1a1a',
+                        color: transaction.amount > 0 ? '#D4AF37' : '#1a1a1a',
                         letterSpacing: '-0.3px',
                       }}
                     >
                       {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </Typography>
                     {transaction.amount > 0 ? (
-                      <TrendingUp sx={{ color: '#10B981', fontSize: 20 }} />
+                      <TrendingUp sx={{ color: '#D4AF37', fontSize: 20 }} />
                     ) : (
                       <TrendingDown sx={{ color: '#999', fontSize: 20 }} />
                     )}
@@ -425,12 +425,12 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} lg={4}>
+        <Grid size={{ xs: 12, lg: 4 }}>
           <Card
             sx={{
               boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
               borderRadius: 3,
-              background: 'linear-gradient(135deg, #0066CC 0%, #0052A3 100%)',
+              background: 'linear-gradient(135deg, #0f3460 0%, #16213e 100%)',
               border: '1px solid rgba(255,255,255,0.1)',
             }}
           >
@@ -440,11 +440,11 @@ export default function Dashboard() {
                   sx={{
                     p: 1.5,
                     borderRadius: 2,
-                    bgcolor: 'rgba(16, 185, 129, 0.2)',
+                    bgcolor: 'rgba(212, 175, 55, 0.2)',
                     mr: 2,
                   }}
                 >
-                  <TrendingUp sx={{ color: '#10B981', fontSize: 28 }} />
+                  <TrendingUp sx={{ color: '#D4AF37', fontSize: 28 }} />
                 </Box>
                 <Typography variant="h6" sx={{ fontWeight: 700, color: 'white', letterSpacing: '-0.3px' }}>
                   Resumen Financiero
@@ -483,7 +483,7 @@ export default function Dashboard() {
                 >
                   Ingresos del mes
                 </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#10B981', mb: 2.5, letterSpacing: '-0.3px' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#D4AF37', mb: 2.5, letterSpacing: '-0.3px' }}>
                   +$3,500.00
                 </Typography>
                 <Typography
@@ -507,17 +507,17 @@ export default function Dashboard() {
                 fullWidth
                 variant="contained"
                 sx={{
-                  bgcolor: '#10B981',
-                  color: 'white',
+                  bgcolor: '#D4AF37',
+                  color: '#0f3460',
                   fontWeight: 700,
                   py: 1.2,
                   fontSize: '0.9rem',
                   textTransform: 'none',
                   borderRadius: 2,
-                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                  boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)',
                   '&:hover': {
-                    bgcolor: '#059669',
-                    boxShadow: '0 6px 16px rgba(16, 185, 129, 0.4)',
+                    bgcolor: '#B89928',
+                    boxShadow: '0 6px 16px rgba(212, 175, 55, 0.4)',
                   },
                 }}
               >
