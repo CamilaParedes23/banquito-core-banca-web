@@ -21,7 +21,6 @@ import {
 import {
   SwapHoriz,
   AccountBalance,
-  ContactMail,
   Receipt,
   CheckCircle,
   ErrorOutline,
@@ -51,7 +50,7 @@ export default function Transfers() {
 
   const steps = ['Ingresar Datos', 'Validar Destinatario', 'Confirmar', 'Comprobante'];
 
-  const customerId = 'CUST-001';
+  const customerId = localStorage.getItem('actor_uuid') || 'CUST-001';
 
   // Cargar cuentas del usuario al iniciar
   useEffect(() => {
@@ -63,7 +62,8 @@ export default function Transfers() {
     try {
       const response = await apiService.getAccounts(customerId);
       // Filtrar solo cuentas activas con saldo disponible
-      setAccounts(response.accounts.filter(acc => acc.status === 'ACTIVE'));
+      const filteredAccounts = response.accounts.filter(acc => acc.status === 'ACTIVE' || acc.status === 'ACTIVA');
+      setAccounts(filteredAccounts);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -179,12 +179,6 @@ export default function Transfers() {
     fetchAccounts(); // Recargar saldos actualizados
   };
 
-  const recentContacts = [
-    { name: 'Ana García López', account: '9876543210987654', bank: 'Banco Digital' },
-    { name: 'Carlos Hernández', account: '5432109876543210', bank: 'BBVA' },
-    { name: 'María Rodríguez', account: '1111222233334444', bank: 'Santander' },
-  ];
-
   return (
     <Layout>
       <Box sx={{ mb: 4 }}>
@@ -232,8 +226,8 @@ export default function Transfers() {
                             <MenuItem key={account.accountNumber} value={account.accountNumber}>
                               {account.accountType === 'CHECKING' ? 'Cuenta Corriente' :
                                account.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                               account.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : account.accountType} - ****{account.accountNumber.slice(-4)} -
-                              Disponible: ${account.availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} {account.currency}
+                               account.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : account.accountType} - {account.accountNumber} -
+                              Disponible: ${(account.availableBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} {account.currency}
                             </MenuItem>
                           ))}
                         </Select>
@@ -335,7 +329,7 @@ export default function Transfers() {
                       <Grid item xs={6}>
                         <Typography variant="caption" sx={{ color: '#999' }}>Cuenta Origen</Typography>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          ****{sourceAccount.slice(-4)}
+                          {sourceAccount}
                         </Typography>
                       </Grid>
                       <Grid item xs={6}>
@@ -404,7 +398,7 @@ export default function Transfers() {
                       Número de Operación
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 700, color: '#0066CC', mb: 2 }}>
-                      {transferResult.transactionId}
+                      {transferResult.transactionId?.substring(0, 8).toUpperCase()}
                     </Typography>
                     <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
                       Fecha y Hora
@@ -429,13 +423,13 @@ export default function Transfers() {
                       Monto Transferido
                     </Typography>
                     <Typography variant="h5" sx={{ fontWeight: 700, color: '#0066CC', mb: 2 }}>
-                      ${transferResult.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                      ${(transferResult.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
                     </Typography>
                     <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
                       Nuevo Saldo
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 600, color: '#10B981' }}>
-                      ${transferResult.newBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                      ${(transferResult.newBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
@@ -456,76 +450,6 @@ export default function Transfers() {
                   </Box>
                 </Box>
               )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={4}>
-          <Card sx={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderRadius: 3, mb: 3 }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <ContactMail sx={{ color: '#0066CC', mr: 1 }} />
-                <Typography variant="h6" sx={{ fontWeight: 600, color: '#0066CC' }}>
-                  Contactos Frecuentes
-                </Typography>
-              </Box>
-              <Typography variant="caption" sx={{ color: '#666', display: 'block', mb: 2 }}>
-                Haz clic para usar estos números de cuenta
-              </Typography>
-              {recentContacts.map((contact, index) => (
-                <Box
-                  key={index}
-                  onClick={() => {
-                    if (activeStep === 0) {
-                      setDestinationAccount(contact.account);
-                    }
-                  }}
-                  sx={{
-                    p: 2,
-                    bgcolor: '#f8f9fa',
-                    borderRadius: 2,
-                    mb: 1,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      bgcolor: '#e8f5e9',
-                      transform: 'translateX(4px)',
-                    },
-                  }}
-                >
-                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#333', mb: 0.5 }}>
-                    {contact.name}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#999', display: 'block' }}>
-                    {contact.account}
-                  </Typography>
-                  <Chip
-                    label={contact.bank}
-                    size="small"
-                    sx={{ mt: 1, height: 20, fontSize: '0.7rem' }}
-                  />
-                </Box>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card sx={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderRadius: 3 }}>
-            <CardContent>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: '#0066CC', mb: 2 }}>
-                Límites de Transferencia
-              </Typography>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="caption" sx={{ color: '#999' }}>Límite Diario P2P</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>$10,000.00 USD</Typography>
-              </Box>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="caption" sx={{ color: '#999' }}>Utilizado Hoy</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#10B981' }}>$0.00 USD</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" sx={{ color: '#999' }}>Disponible</Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#0066CC' }}>$10,000.00 USD</Typography>
-              </Box>
             </CardContent>
           </Card>
         </Grid>

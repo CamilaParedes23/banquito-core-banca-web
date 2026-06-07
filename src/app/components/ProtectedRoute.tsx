@@ -9,13 +9,13 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('access_token');
     if (!token) {
       navigate('/login');
     }
   }, [navigate]);
 
-  const token = localStorage.getItem('authToken');
+  const token = localStorage.getItem('access_token');
   if (!token) {
     return null;
   }

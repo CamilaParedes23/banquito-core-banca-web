@@ -94,6 +94,7 @@ const STORAGE_KEYS = {
   EXPIRES_AT: 'expires_at',
   SCOPES: 'scopes',
   USER_UUID: 'user_uuid',
+  ACTOR_UUID: 'actor_uuid',
   USERNAME: 'username',
 };
 
@@ -101,7 +102,7 @@ const STORAGE_KEYS = {
  * Guardar sesión en localStorage
  */
 export const saveSession = (authResponse: AuthTokenResponse, userUuid?: string, username?: string): void => {
-  const expiresAt = Date.now() + (authResponse.expiresIn * 1000);
+  const expiresAt = Date.now() + (authResponse.expiresInSeconds * 1000);
 
   localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, authResponse.accessToken);
   localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, authResponse.refreshToken);
@@ -110,6 +111,9 @@ export const saveSession = (authResponse: AuthTokenResponse, userUuid?: string, 
 
   if (userUuid) {
     localStorage.setItem(STORAGE_KEYS.USER_UUID, userUuid);
+  }
+  if (authResponse.actorUuid) {
+    localStorage.setItem(STORAGE_KEYS.ACTOR_UUID, authResponse.actorUuid);
   }
   if (username) {
     localStorage.setItem(STORAGE_KEYS.USERNAME, username);
@@ -177,7 +181,11 @@ const mockLoginResponse: AuthTokenResponse = {
   accessToken: 'mock_access_token_' + Date.now(),
   refreshToken: 'mock_refresh_token_' + Date.now(),
   tokenType: 'Bearer',
-  expiresIn: 3600,
+  expiresInSeconds: 3600,
+  sessionUuid: 'mock-session-uuid',
+  actorUuid: 'mock-actor-uuid',
+  actorType: 'CLIENTE',
+  roles: ['CUSTOMER'],
   scopes: ['read:accounts', 'write:transfers', 'read:profile'],
 };
 
@@ -300,4 +308,24 @@ export const authService = {
       clearSession();
     }
   },
+};
+
+/**
+ * Obtener detalle del usuario (incluye UUID_REFERENCIA_EXTERNA)
+ */
+export const getUserDetail = async (userUuid: string): Promise<any> => {
+  const token = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  const response = await fetch(`${API_BASE_URL}/iam/users/${userUuid}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('Error fetching user detail');
+  }
+
+  return response.json();
 };

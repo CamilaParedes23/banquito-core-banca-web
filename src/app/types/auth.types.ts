@@ -27,7 +27,11 @@ export interface AuthTokenResponse {
   accessToken: string;
   refreshToken: string;
   tokenType: string;
-  expiresIn: number;
+  expiresInSeconds: number;
+  sessionUuid: string;
+  actorUuid: string;
+  actorType: string;
+  roles: string[];
   scopes: string[];
 }
 

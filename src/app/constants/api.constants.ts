@@ -4,7 +4,7 @@
 /**
  * URL base de la API
  */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 /**
  * Flag para usar datos mock en desarrollo
@@ -19,6 +19,7 @@ export const ACCOUNT_ENDPOINTS = {
   GET_ACCOUNT_BALANCE: (accountNumber: string) => `/accounts/${accountNumber}/balance`,
   GET_ACCOUNT_TRANSACTIONS: (accountNumber: string) => `/accounts/${accountNumber}/transactions`,
   GET_ACCOUNT_OWNER: (accountNumber: string) => `/accounts/${accountNumber}/owner`,
+  GET_ACCOUNTS_BY_CUSTOMER: (customerUuid: string) => `/accounts/by-customer/${customerUuid}`,
   TRANSFER_P2P: '/accounts/transfers/p2p',
 } as const;
 

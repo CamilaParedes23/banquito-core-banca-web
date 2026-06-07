@@ -1,6 +1,6 @@
 // Configuración base de la API del Core Bancario
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-const USE_MOCK_DATA = true; // Cambiar a false cuando el Core esté disponible
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const USE_MOCK_DATA = false; // Cambiar a false cuando el Core esté disponible
 
 // Tipos de datos
 export interface Account {
@@ -147,11 +147,15 @@ export const apiService = {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/accounts/${customerId}`, {
+      // Obtener customerUuid del localStorage (se guarda al hacer login como actor_uuid)
+      // El actorUuid del login es el UUID del cliente cuando está vinculado
+      const customerUuid = localStorage.getItem('actor_uuid') || customerId;
+
+      const response = await fetch(`${API_BASE_URL}/accounts/by-customer/${customerUuid}?includeBalance=true`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
 
@@ -159,7 +163,31 @@ export const apiService = {
         throw { response: { status: response.status, data: await response.json() } };
       }
 
-      return await response.json();
+      const accounts = await response.json();
+
+      // Mapeo de códigos de subtipo a tipos de cuenta legibles
+      const subtypeToType: Record<string, string> = {
+        'AHO_STD': 'savings',
+        'AHO_JUV': 'savings',
+        'AHO_VIV': 'savings',
+        'CTE_STD': 'checking',
+        'CTE_EMP': 'checking',
+        'CTE_PAG': 'checking',
+      };
+
+      // Convertir formato del backend al formato local
+      return {
+        customerId: customerUuid,
+        accounts: accounts.map((acc: any) => ({
+          accountNumber: acc.accountNumber,
+          accountType: subtypeToType[acc.subtypeCode] || 'checking',
+          balance: acc.accountingBalance || 0,
+          availableBalance: acc.availableBalance || 0,
+          currency: 'USD',
+          status: acc.status || 'ACTIVE',
+          holderName: acc.holderName || 'Cliente',
+        })),
+      };
     } catch (error) {
       console.error('Error fetching accounts:', error);
       throw error;
@@ -190,11 +218,11 @@ export const apiService = {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/accounts/holder/${accountNumber}`, {
+      const response = await fetch(`${API_BASE_URL}/accounts/${accountNumber}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
 
@@ -202,7 +230,13 @@ export const apiService = {
         throw { response: { status: response.status, data: await response.json() } };
       }
 
-      return await response.json();
+      const account = await response.json();
+
+      return {
+        accountNumber: account.accountNumber,
+        holderName: account.holderName,
+        status: account.status,
+      };
     } catch (error) {
       console.error('Error fetching account holder:', error);
       throw error;
@@ -289,20 +323,40 @@ export const apiService = {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/transfers`, {
+      const response = await fetch(`${API_BASE_URL}/accounts/transfers/p2p`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
-        body: JSON.stringify(transferData),
+        body: JSON.stringify({
+          sourceAccountNumber: transferData.sourceAccount,
+          targetAccountNumber: transferData.destinationAccount,
+          amount: transferData.amount,
+          reference: transferData.reference || transferData.concept,
+        }),
       });
 
       if (!response.ok) {
         throw { response: { status: response.status, data: await response.json() } };
       }
 
-      return await response.json();
+      const result = await response.json();
+
+      // El backend devuelve un array con 2 transacciones (DEBITO y CREDITO)
+      // Usamos la primera (DEBITO) para el comprobante
+      const debitTransaction = Array.isArray(result) ? result[0] : result;
+
+      // Convertir formato del backend al formato local
+      return {
+        transactionId: debitTransaction.transactionUuid,
+        status: debitTransaction.status,
+        timestamp: debitTransaction.timestamp,
+        sourceAccount: debitTransaction.accountNumber || transferData.sourceAccount,
+        destinationAccount: transferData.destinationAccount,
+        amount: debitTransaction.amount,
+        newBalance: debitTransaction.resultingAvailableBalance,
+      };
     } catch (error) {
       console.error('Error creating transfer:', error);
       throw error;

@@ -22,7 +22,7 @@ import {
 
 export default function Login() {
   const navigate = useNavigate();
-  const [identification, setIdentification] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -32,24 +32,55 @@ export default function Login() {
     e.preventDefault();
     setError('');
 
-    if (!identification || !password) {
+    if (!username || !password) {
       setError('Por favor, completa todos los campos');
       return;
     }
 
     setLoading(true);
 
-    // Simulación de login (en producción esto llamaría a la API de autenticación)
-    setTimeout(() => {
-      if (identification.length >= 8 && password.length >= 6) {
-        localStorage.setItem('authToken', 'mock-token-12345');
-        localStorage.setItem('userId', identification);
-        navigate('/');
-      } else {
-        setError('Identificación o contraseña incorrectos');
-        setLoading(false);
+    try {
+      const { authService, getUserDetail } = await import('../services/auth.service');
+      const response = await authService.login({ username, password });
+      
+      // Guardar sesión inicial
+      const { saveSession } = await import('../services/auth.service');
+      saveSession(response, response.actorUuid, username);
+      
+      // Obtener detalle del usuario para obtener UUID_REFERENCIA_EXTERNA (customer UUID)
+      try {
+        const userDetail = await getUserDetail(response.actorUuid);
+        if (userDetail.externalReferenceUuid) {
+          localStorage.setItem('actor_uuid', userDetail.externalReferenceUuid);
+
+          // Obtener nombre del cliente
+          const customerResponse = await fetch(`http://localhost:8000/api/v1/customers/${userDetail.externalReferenceUuid}`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${response.accessToken}`,
+            },
+          });
+
+          if (customerResponse.ok) {
+            const customer = await customerResponse.json();
+            const customerName = customer.naturalPerson
+              ? `${customer.naturalPerson.names} ${customer.naturalPerson.lastNames}`
+              : customer.legalPerson?.legalName || username;
+            localStorage.setItem('customer_name', customerName);
+          }
+        }
+      } catch (err) {
+        // Continuar sin el UUID del cliente
       }
-    }, 1000);
+
+      navigate('/');
+    } catch (err: any) {
+      const { getAuthErrorMessage } = await import('../services/auth.service');
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -249,14 +280,13 @@ export default function Login() {
             <form onSubmit={handleSubmit}>
               <Box sx={{ mb: 3 }}>
                 <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, color: '#333' }}>
-                  Identificación / Cédula
+                  Usuario
                 </Typography>
                 <TextField
                   fullWidth
-                  placeholder="Ej: 1234567890"
-                  value={identification}
-                  onChange={(e) => setIdentification(e.target.value.replace(/\D/g, ''))}
-                  inputProps={{ maxLength: 13 }}
+                  placeholder="Ej: maria.paredes.5555"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 2,
