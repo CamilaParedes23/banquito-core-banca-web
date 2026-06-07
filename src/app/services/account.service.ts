@@ -85,7 +85,7 @@ export const getErrorMessage = (error: any): string => {
  * Helper para obtener token de autenticación
  */
 const getAuthToken = (): string | null => {
-  return localStorage.getItem('authToken');
+  return localStorage.getItem('access_token');
 };
 
 /**
@@ -240,6 +240,41 @@ export const accountService = {
   },
 
   /**
+   * GET /accounts/by-customer/{customerUuid}
+   * Listar cuentas por cliente
+   */
+  async getAccountsByCustomer(customerUuid: string, status?: string, onlyTransferable?: boolean, includeBalance?: boolean): Promise<AccountResponse[]> {
+    if (USE_MOCK_DATA) {
+      await delay(800);
+      return [mockAccount];
+    }
+
+    const token = getAuthToken();
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (onlyTransferable !== undefined) params.append('onlyTransferable', onlyTransferable.toString());
+    if (includeBalance !== undefined) params.append('includeBalance', includeBalance.toString());
+
+    const response = await fetchWithTimeout(
+      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.GET_ACCOUNTS_BY_CUSTOMER(customerUuid)}${params.toString() ? `?${params.toString()}` : ''}`,
+      {
+        method: 'GET',
+        headers: {
+          ...DEFAULT_HEADERS,
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw { response: { status: response.status, data: errorData } };
+    }
+
+    return response.json();
+  },
+
+  /**
    * GET /accounts/{accountNumber}/transactions
    * Consultar últimos N movimientos
    */
@@ -271,7 +306,29 @@ export const accountService = {
       throw { response: { status: response.status, data: errorData } };
     }
 
-    return response.json();
+    const transactions = await response.json();
+
+    // Mapeo de subtipos a descripciones amigables
+    const subtypeDescriptions: Record<string, string> = {
+      'TRF_P2P_DEB': 'Transferencia P2P enviada',
+      'TRF_P2P_CRE': 'Transferencia P2P recibida',
+      'DEP_VENTANILLA': 'Depósito en ventanilla',
+      'RET_VENTANILLA': 'Retiro en ventanilla',
+      'APERTURA_CUENTA': 'Apertura de cuenta',
+    };
+
+    // Mapear formato del backend al formato local
+    return transactions.map((txn: any) => ({
+      transactionUuid: txn.transactionUuid || txn.uuidTransaccion,
+      date: txn.timestamp || txn.date || txn.fechaTransaccion || txn.accountingDate,
+      description: subtypeDescriptions[txn.subtypeCode] || txn.description || txn.descripcion || 'Transacción',
+      reference: txn.reference || txn.referencia || txn.externalReference,
+      amount: txn.amount || txn.monto,
+      balance: txn.balance || txn.saldoResultante || txn.resultingAvailableBalance,
+      status: txn.status || txn.estado,
+      type: txn.type || txn.tipoMovimiento || txn.movementType === 'CREDITO' ? 'CREDIT' : txn.movementType === 'DEBITO' ? 'DEBIT' : txn.movementType,
+      movementType: txn.movementType || txn.type || txn.tipoMovimiento,
+    }));
   },
 
   /**

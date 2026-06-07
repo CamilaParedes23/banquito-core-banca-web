@@ -27,6 +27,7 @@ import {
 import { useNavigate } from 'react-router';
 import Layout from '../components/Layout';
 import { apiService, getErrorMessage, Account } from '../services/api';
+import { accountService } from '../services/account.service';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -34,7 +35,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [balanceVisibility, setBalanceVisibility] = useState<Record<string, boolean>>({});
-  const customerId = 'CUST-001'; // En producción vendría del contexto de autenticación
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [monthlyIncome, setMonthlyIncome] = useState(0);
+  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
+  const customerId = localStorage.getItem('actor_uuid') || 'CUST-001'; // Usar UUID del cliente del localStorage
 
   // RF-03: Consumir API de saldos al cargar el dashboard
   const fetchAccounts = async () => {
@@ -43,10 +48,63 @@ export default function Dashboard() {
     try {
       const response = await apiService.getAccounts(customerId);
       setAccounts(response.accounts);
+      
+      // Cargar transacciones de todas las cuentas para calcular ingresos y gastos del mes
+      const allTransactions: any[] = [];
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      
+      for (const account of response.accounts) {
+        try {
+          const txns = await accountService.getAccountTransactions({
+            accountNumber: account.accountNumber,
+            limit: 100, // Obtener más transacciones para calcular del mes
+          });
+          allTransactions.push(...txns);
+        } catch (err) {
+          // Silenciar error al obtener transacciones de una cuenta
+        }
+      }
+      
+      setTransactions(allTransactions);
+
+      // Calcular ingresos y gastos del mes actual
+      let income = 0;
+      let expenses = 0;
+      
+      allTransactions.forEach((txn) => {
+        const txnDate = new Date(txn.date);
+        if (txnDate.getMonth() === currentMonth && txnDate.getFullYear() === currentYear) {
+          if (txn.type === 'CREDIT' || txn.movementType === 'CREDITO') {
+            income += Math.abs(txn.amount || 0);
+          } else if (txn.type === 'DEBIT' || txn.movementType === 'DEBITO') {
+            expenses += Math.abs(txn.amount || 0);
+          }
+        }
+      });
+
+      setMonthlyIncome(income);
+      setMonthlyExpenses(expenses);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTransactions = async (accountNumber: string) => {
+    setLoadingTransactions(true);
+    try {
+      const response = await accountService.getAccountTransactions({
+        accountNumber,
+        limit: 5,
+      });
+      setTransactions(response);
+    } catch (err) {
+      setTransactions([]);
+    } finally {
+      setLoadingTransactions(false);
     }
   };
 
@@ -56,6 +114,7 @@ export default function Dashboard() {
 
   // Función helper para obtener icono según tipo de cuenta
   const getAccountIcon = (type: string) => {
+    if (!type) return <AccountBalance />;
     switch (type.toLowerCase()) {
       case 'savings':
       case 'ahorros':
@@ -70,6 +129,7 @@ export default function Dashboard() {
 
   // Función helper para obtener color según tipo de cuenta
   const getAccountColor = (type: string) => {
+    if (!type) return '#0f3460';
     switch (type.toLowerCase()) {
       case 'savings':
       case 'ahorros':
@@ -101,38 +161,12 @@ export default function Dashboard() {
     return balanceVisibility[accountNumber] !== false; // Por defecto visible
   };
 
-  const recentTransactions = [
-    {
-      description: 'Transferencia a Ana García',
-      amount: -250.00,
-      date: '28 May 2026',
-      category: 'Transferencia',
-    },
-    {
-      description: 'Depósito Nómina',
-      amount: 3500.00,
-      date: '27 May 2026',
-      category: 'Ingreso',
-    },
-    {
-      description: 'Pago Servicios',
-      amount: -85.00,
-      date: '26 May 2026',
-      category: 'Servicios',
-    },
-    {
-      description: 'Compra en Línea',
-      amount: -124.50,
-      date: '25 May 2026',
-      category: 'Compras',
-    },
-    {
-      description: 'Retiro ATM',
-      amount: -300.00,
-      date: '24 May 2026',
-      category: 'Retiro',
-    },
-  ];
+  const recentTransactions = transactions.map((txn) => ({
+    description: txn.description || 'Transacción',
+    amount: txn.amount || 0,
+    date: txn.date || new Date().toISOString(),
+    category: txn.type === 'CREDIT' ? 'Ingreso' : 'Egreso',
+  }));
 
   return (
     <Layout>
@@ -484,7 +518,7 @@ export default function Dashboard() {
                   Ingresos del mes
                 </Typography>
                 <Typography variant="h6" sx={{ fontWeight: 700, color: '#D4AF37', mb: 2.5, letterSpacing: '-0.3px' }}>
-                  +$3,500.00
+                  +${monthlyIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </Typography>
                 <Typography
                   variant="caption"
@@ -500,7 +534,7 @@ export default function Dashboard() {
                   Gastos del mes
                 </Typography>
                 <Typography variant="h6" sx={{ fontWeight: 700, color: '#f87171', letterSpacing: '-0.3px' }}>
-                  -$759.50
+                  -${monthlyExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </Typography>
               </Box>
               <Button

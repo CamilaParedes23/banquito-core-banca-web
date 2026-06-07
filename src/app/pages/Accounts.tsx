@@ -176,14 +176,16 @@ export default function Accounts() {
         holderName: acc.holderName,
         icon: acc.accountType === 'SAVINGS' ? <Savings /> : <AccountBalance />,
         color: acc.accountType === 'SAVINGS' ? '#D4AF37' : '#0f3460',
-        movements: acc.accountType === 'SAVINGS' ? 89 : 245,
+        movements: 0, // Se actualizará al cargar transacciones
         interestRate: acc.accountType === 'SAVINGS' ? 4.5 : undefined,
-        transactions: mockTransactions[acc.accountNumber] || [],
+        transactions: [], // Se cargarán después
       }));
 
       setAccounts(localAccounts);
       if (!selectedAccount && localAccounts.length > 0) {
         setSelectedAccount(localAccounts[0].accountNumber);
+        // Cargar transacciones de la primera cuenta
+        await fetchTransactions(localAccounts[0].accountNumber);
       }
     } catch (err) {
       setError('Error al cargar las cuentas');
@@ -192,9 +194,47 @@ export default function Accounts() {
     }
   };
 
+  const fetchTransactions = async (accountNumber: string) => {
+    try {
+      const { accountService } = await import('../services/account.service');
+      const transactions = await accountService.getAccountTransactions({
+        accountNumber,
+        limit: 10,
+      });
+      
+      // Mapear transacciones al formato local
+      const localTransactions = transactions.map((txn, index) => ({
+        id: index + 1,
+        date: txn.date || new Date().toISOString(),
+        description: txn.description || 'Transacción',
+        reference: txn.reference || '',
+        amount: txn.amount || 0,
+        balance: txn.balance || 0,
+        status: txn.status || 'PENDIENTE',
+      }));
+      
+      // Actualizar la cuenta con las transacciones
+      setAccounts(prevAccounts => 
+        prevAccounts.map(acc => 
+          acc.accountNumber === accountNumber 
+            ? { ...acc, transactions: localTransactions, movements: localTransactions.length }
+            : acc
+        )
+      );
+    } catch (err) {
+      console.error('Error fetching transactions:', err);
+    }
+  };
+
   useEffect(() => {
     fetchAccounts();
   }, []);
+
+  useEffect(() => {
+    if (selectedAccount) {
+      fetchTransactions(selectedAccount);
+    }
+  }, [selectedAccount]);
 
   const toggleBalanceVisibility = (accountId: string) => {
     setBalanceVisibility(prev => ({
@@ -259,25 +299,27 @@ export default function Accounts() {
         </Box>
       ) : (
         <>
-        <Grid container spacing={3}>
+        <Box sx={{ display: 'flex', gap: 3, overflowX: 'auto', pb: 2 }}>
         {accounts.map((account, index) => (
-          <Grid size={{ xs: 12, md: 6 }} key={account.accountNumber}>
-            <Box
-              onClick={() => setSelectedAccount(account.accountNumber)}
-              sx={{
-                p: 3,
-                borderRadius: 3,
-                background: `linear-gradient(135deg, ${account.color} 0%, ${account.color}dd 100%)`,
-                color: 'white',
-                cursor: 'pointer',
-                border: selectedAccount === account.accountNumber ? '3px solid #D4AF37' : '3px solid transparent',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-                },
-              }}
-            >
+          <Box
+            key={account.accountNumber}
+            sx={{
+              minWidth: 300,
+              flex: '0 0 auto',
+              p: 3,
+              borderRadius: 3,
+              background: `linear-gradient(135deg, ${account.color} 0%, ${account.color}dd 100%)`,
+              color: 'white',
+              cursor: 'pointer',
+              border: selectedAccount === account.accountNumber ? '3px solid #D4AF37' : '3px solid transparent',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+              },
+            }}
+            onClick={() => setSelectedAccount(account.accountNumber)}
+          >
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
                 <Box
                   sx={{
@@ -372,9 +414,8 @@ export default function Accounts() {
                 </IconButton>
               </Box>
             </Box>
-          </Grid>
         ))}
-      </Grid>
+        </Box>
 
       {/* Información Detallada de la Cuenta Seleccionada */}
       {getSelectedAccount() && (
@@ -529,7 +570,6 @@ export default function Accounts() {
                   <TableRow sx={{ bgcolor: '#f8f9fa' }}>
                     <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Fecha</TableCell>
                     <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Descripción</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Referencia</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600, color: '#0f3460' }}>Monto</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600, color: '#0f3460' }}>Saldo</TableCell>
                     <TableCell align="center" sx={{ fontWeight: 600, color: '#0f3460' }}>Estado</TableCell>
@@ -546,17 +586,18 @@ export default function Accounts() {
                     >
                       <TableCell>
                         <Typography variant="body2" sx={{ color: '#666' }}>
-                          {transaction.date}
+                          {new Date(transaction.date).toLocaleString('es-ES', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
                         </Typography>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 600, color: '#333' }}>
                           {transaction.description}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="caption" sx={{ color: '#999' }}>
-                          {transaction.reference}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">

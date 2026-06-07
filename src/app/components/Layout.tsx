@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import {
   Box,
@@ -35,6 +35,17 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [username, setUsername] = useState('');
+
+  useEffect(() => {
+    const storedUsername = localStorage.getItem('username');
+    const storedCustomerName = localStorage.getItem('customer_name');
+    if (storedCustomerName) {
+      setUsername(storedCustomerName);
+    } else if (storedUsername) {
+      setUsername(storedUsername);
+    }
+  }, []);
 
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
@@ -84,10 +95,12 @@ export default function Layout({ children }: LayoutProps) {
       <Divider sx={{ bgcolor: 'rgba(255,255,255,0.1)' }} />
       <Box sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 2 }}>
-          <Avatar sx={{ bgcolor: '#D4AF37', width: 40, height: 40, color: '#0f3460', fontWeight: 700 }}>JD</Avatar>
+          <Avatar sx={{ bgcolor: '#D4AF37', width: 40, height: 40, color: '#0f3460', fontWeight: 700 }}>
+            {username ? username.split('.').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'JD'}
+          </Avatar>
           <Box sx={{ flex: 1 }}>
             <Typography variant="body2" sx={{ color: 'white', fontWeight: 600 }}>
-              Juan Díaz
+              {username || 'Usuario'}
             </Typography>
           </Box>
         </Box>
@@ -143,11 +156,11 @@ export default function Layout({ children }: LayoutProps) {
               }}
             >
               <Avatar sx={{ bgcolor: '#0f3460', width: 32, height: 32, fontSize: '0.9rem' }}>
-                JD
+                {username ? username.split('.').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'JD'}
               </Avatar>
               <Box>
                 <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a', lineHeight: 1.2 }}>
-                  Juan Díaz
+                  {username || 'Usuario'}
                 </Typography>
               </Box>
             </Box>
