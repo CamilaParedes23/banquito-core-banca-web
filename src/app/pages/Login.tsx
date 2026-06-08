@@ -50,6 +50,13 @@ export default function Login() {
       // Obtener detalle del usuario para obtener UUID_REFERENCIA_EXTERNA (customer UUID)
       try {
         const userDetail = await getUserDetail(response.actorUuid);
+
+        // Validar que el usuario sea de tipo CLIENTE
+        if (userDetail.actorType !== 'CLIENTE') {
+          setError('Solo personal autorizado');
+          return;
+        }
+
         if (userDetail.externalReferenceUuid) {
           localStorage.setItem('actor_uuid', userDetail.externalReferenceUuid);
 
