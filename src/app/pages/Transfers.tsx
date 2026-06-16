@@ -1,459 +1,420 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import {
-  Grid,
-  Card,
-  CardContent,
-  Typography,
+  Alert,
   Box,
   Button,
-  TextField,
-  Select,
-  MenuItem,
+  Card,
+  CardContent,
+  CircularProgress,
+  Divider,
   FormControl,
+  Grid,
+  InputAdornment,
   InputLabel,
-  Chip,
-  Alert,
-  Stepper,
+  MenuItem,
+  Select,
   Step,
   StepLabel,
-  CircularProgress,
+  Stepper,
+  TextField,
+  Tooltip,
+  Typography,
 } from '@mui/material';
-import {
-  SwapHoriz,
-  AccountBalance,
-  Receipt,
-  CheckCircle,
-  ErrorOutline,
-} from '@mui/icons-material';
+import { CheckCircle, ContentCopy, ErrorOutline, PictureAsPdf, Print, ReceiptLong, SwapHoriz } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import { apiService, getErrorMessage, Account, TransferResponse } from '../services/api';
+import AccountNumberDisplay from '../components/AccountNumberDisplay';
+import { accountService } from '../services/account.service';
+import { getFriendlyApiError } from '../services/http.service';
+import { sessionService } from '../services/session.service';
+import type {
+  AccountOwnerResponse,
+  AccountResponse,
+  P2PTransferResponse,
+} from '../types/account.types';
+import {
+  formatCurrency,
+  formatDateTime,
+  getAccountLabel,
+  humanizeStatus,
+  getAccountProductLabel,
+} from '../utils/formatters';
+import { downloadTransferReceiptPdf, printTransferReceipt, type TransferReceiptData } from '../utils/transferReceipt';
+
+interface LocationState {
+  sourceAccount?: string;
+}
+
+const activeStatus = (status: string): boolean => ['ACTIVA', 'ACTIVE'].includes(status.toUpperCase());
+const createIdempotencyKey = (): string =>
+  globalThis.crypto?.randomUUID?.() ||
+  `p2p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const beneficiaryLabel = (beneficiary: AccountOwnerResponse): string =>
+  beneficiary.holderName?.trim() || 'Titular pendiente de validación por el Core';
 
 export default function Transfers() {
-  const [activeStep, setActiveStep] = useState(0);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const session = sessionService.get();
+  const customerUuid = session?.profile.customerUuid || '';
+  const requestedSource = (location.state as LocationState | null)?.sourceAccount || '';
+  const submissionLock = useRef(false);
+  const idempotencyKeyRef = useRef('');
 
-  // Datos del formulario
-  const [sourceAccount, setSourceAccount] = useState('');
-  const [destinationAccount, setDestinationAccount] = useState('');
+  const [accounts, setAccounts] = useState<AccountResponse[]>([]);
+  const [sourceAccount, setSourceAccount] = useState(requestedSource);
+  const [targetAccount, setTargetAccount] = useState('');
   const [amount, setAmount] = useState('');
-  const [concept, setConcept] = useState('');
   const [reference, setReference] = useState('');
+  const [beneficiary, setBeneficiary] = useState<AccountOwnerResponse | null>(null);
+  const [result, setResult] = useState<P2PTransferResponse | null>(null);
+  const [step, setStep] = useState(0);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [validating, setValidating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  // Validación de destinatario
-  const [destinationHolder, setDestinationHolder] = useState('');
-  const [validatingDestination, setValidatingDestination] = useState(false);
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.accountNumber === sourceAccount),
+    [accounts, sourceAccount],
+  );
 
-  // Resultado de transferencia
-  const [transferResult, setTransferResult] = useState<TransferResponse | null>(null);
-
-  const steps = ['Ingresar Datos', 'Validar Destinatario', 'Confirmar', 'Comprobante'];
-
-  const customerId = localStorage.getItem('actor_uuid') || 'CUST-001';
-
-  // Cargar cuentas del usuario al iniciar
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
-
-  const fetchAccounts = async () => {
-    setLoading(true);
+  const loadAccounts = async () => {
+    setLoadingAccounts(true);
+    setError('');
     try {
-      const response = await apiService.getAccounts(customerId);
-      // Filtrar solo cuentas activas con saldo disponible
-      const filteredAccounts = response.accounts.filter(acc => acc.status === 'ACTIVE' || acc.status === 'ACTIVA');
-      setAccounts(filteredAccounts);
-    } catch (err) {
-      setError(getErrorMessage(err));
+      const data = await accountService.getAccountsByCustomer(customerUuid, {
+        onlyTransferable: true,
+        includeBalance: true,
+      });
+      const transferable = data.filter((account) => activeStatus(account.status));
+      setAccounts(transferable);
+      setSourceAccount((current) =>
+        transferable.some((account) => account.accountNumber === current)
+          ? current
+          : transferable[0]?.accountNumber || '',
+      );
+    } catch (requestError) {
+      setError(getFriendlyApiError(requestError));
     } finally {
-      setLoading(false);
+      setLoadingAccounts(false);
     }
   };
 
-  // Validar destinatario antes de continuar al siguiente paso
-  const validateDestination = async () => {
-    if (!destinationAccount || destinationAccount.length < 10) {
-      setError('Por favor, ingresa un número de cuenta válido (mínimo 10 dígitos)');
+  useEffect(() => {
+    void loadAccounts();
+  }, [customerUuid]);
+
+  const validateForm = (): string | null => {
+    if (!sourceAccount) return 'Selecciona la cuenta de origen.';
+    if (!/^\d+$/.test(targetAccount.trim())) return 'Ingresa un número de cuenta destino válido.';
+    if (sourceAccount === targetAccount.trim()) return 'La cuenta destino debe ser diferente a la cuenta origen.';
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) return 'Ingresa un monto mayor a cero.';
+    if (selectedAccount && parsedAmount > selectedAccount.availableBalance) return 'El saldo disponible no cubre el monto de la transferencia.';
+    if (!reference.trim()) return 'Ingresa el concepto o referencia de la transferencia.';
+    return null;
+  };
+
+  const validateBeneficiary = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
       return;
     }
-
-    setValidatingDestination(true);
-    setError(null);
-
+    setValidating(true);
+    setError('');
     try {
-      const response = await apiService.getAccountHolder(destinationAccount);
-      setDestinationHolder(response.holderName);
-      setActiveStep(2); // Ir directamente a confirmación
-    } catch (err) {
-      setError(getErrorMessage(err));
-      setActiveStep(0); // Volver al formulario si hay error
+      const preview = await accountService.getBeneficiaryPreview(targetAccount.trim());
+      if (preview.verified && !activeStatus(preview.status)) {
+        setError('La cuenta destino no se encuentra activa para recibir transferencias.');
+        return;
+      }
+      setBeneficiary(preview);
+      idempotencyKeyRef.current = createIdempotencyKey();
+      setStep(1);
+    } catch (requestError) {
+      setBeneficiary(null);
+      setError(getFriendlyApiError(requestError));
     } finally {
-      setValidatingDestination(false);
+      setValidating(false);
     }
   };
 
-  // Procesar transferencia
-  const processTransfer = async () => {
-    setLoading(true);
-    setError(null);
-
+  const submitTransfer = async () => {
+    if (!selectedAccount || !beneficiary || submissionLock.current) return;
+    submissionLock.current = true;
+    setSubmitting(true);
+    setError('');
     try {
-      const result = await apiService.createTransfer({
-        sourceAccount,
-        destinationAccount,
-        amount: parseFloat(amount),
-        concept,
-        reference: reference || undefined,
-      });
-
-      setTransferResult(result);
-      setActiveStep(3); // Ir a comprobante
-    } catch (err) {
-      setError(getErrorMessage(err));
+      const transfer = await accountService.transferP2P(
+        {
+          sourceAccountNumber: selectedAccount.accountNumber,
+          targetAccountNumber: beneficiary.accountNumber,
+          amount: Number(amount),
+          reference: reference.trim(),
+        },
+        idempotencyKeyRef.current || undefined,
+      );
+      setResult(transfer);
+      setStep(2);
+    } catch (requestError) {
+      setError(getFriendlyApiError(requestError));
     } finally {
-      setLoading(false);
+      submissionLock.current = false;
+      setSubmitting(false);
     }
   };
 
-  const handleNext = () => {
-    setError(null);
-
-    if (activeStep === 0) {
-      // Validar formulario
-      if (!sourceAccount) {
-        setError('Selecciona una cuenta de origen');
-        return;
-      }
-      if (!destinationAccount) {
-        setError('Ingresa el número de cuenta destino');
-        return;
-      }
-      if (!amount || parseFloat(amount) <= 0) {
-        setError('Ingresa un monto válido mayor a cero');
-        return;
-      }
-
-      const selectedAccount = accounts.find(acc => acc.accountNumber === sourceAccount);
-      if (selectedAccount && parseFloat(amount) > selectedAccount.availableBalance) {
-        setError('Saldo insuficiente en la cuenta seleccionada');
-        return;
-      }
-
-      if (!concept) {
-        setError('Ingresa el concepto de la transferencia');
-        return;
-      }
-
-      // Validar destinatario
-      setActiveStep(1);
-      validateDestination();
-    } else if (activeStep === 2) {
-      // Confirmar y procesar transferencia
-      processTransfer();
-    } else {
-      setActiveStep((prev) => prev + 1);
-    }
-  };
-
-  const handleBack = () => {
-    setError(null);
-    if (activeStep === 2) {
-      setActiveStep(0); // Volver al formulario
-      setDestinationHolder('');
-    } else {
-      setActiveStep((prev) => prev - 1);
-    }
-  };
-
-  const resetForm = () => {
-    setActiveStep(0);
-    setSourceAccount('');
-    setDestinationAccount('');
+  const reset = async () => {
+    setStep(0);
+    setTargetAccount('');
     setAmount('');
-    setConcept('');
     setReference('');
-    setDestinationHolder('');
-    setTransferResult(null);
-    setError(null);
-    fetchAccounts(); // Recargar saldos actualizados
+    setBeneficiary(null);
+    setResult(null);
+    idempotencyKeyRef.current = '';
+    setError('');
+    await loadAccounts();
+  };
+
+  const buildReceiptData = (): TransferReceiptData | null => {
+    if (!result || !beneficiary || !selectedAccount) return null;
+    return {
+      transactionReference: result.transactionUuid,
+      correlationId: result.correlationId,
+      timestamp: result.timestamp,
+      status: result.status,
+      sourceHolder: selectedAccount.holderName || session?.profile.username || 'Titular de la cuenta',
+      sourceAccountNumber: selectedAccount.accountNumber,
+      sourceProduct: getAccountProductLabel(selectedAccount),
+      beneficiaryName: beneficiaryLabel(beneficiary),
+      targetAccountNumber: beneficiary.accountNumber,
+      targetBank: 'Banco BanQuito',
+      amount: result.amount,
+      fee: result.fee ?? 0,
+      reference,
+      newAvailableBalance: result.newBalance,
+      channel: 'Banca Web Personas',
+    };
+  };
+
+  const downloadReceipt = async () => {
+    const receipt = buildReceiptData();
+    if (receipt) await downloadTransferReceiptPdf(receipt);
+  };
+
+  const printReceipt = () => {
+    const receipt = buildReceiptData();
+    if (receipt) printTransferReceipt(receipt);
+  };
+
+  const copyTransactionReference = async () => {
+    if (!result?.transactionUuid) return;
+    try {
+      await navigator.clipboard.writeText(result.transactionUuid);
+    } catch {
+      // La referencia permanece visible para copia manual si el navegador bloquea el portapapeles.
+    }
   };
 
   return (
     <Layout>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: '#0066CC', mb: 1 }}>
-          Transferencias P2P
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#666' }}>
-          Envía dinero de forma rápida y segura
-        </Typography>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 800, color: '#123f70', mb: 0.5 }}>Transferencia P2P</Typography>
+        <Typography color="text.secondary">Transferencias uno a uno entre cuentas de Banco BanQuito.</Typography>
       </Box>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
-          <Card sx={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)', borderRadius: 3 }}>
-            <CardContent sx={{ p: 4 }}>
-              <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-                {steps.map((label) => (
-                  <Step key={label}>
-                    <StepLabel>{label}</StepLabel>
-                  </Step>
-                ))}
-              </Stepper>
+      <Card sx={{ maxWidth: 920, mx: 'auto', border: '1px solid #e5e7eb' }}>
+        <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
+          <Stepper activeStep={step} sx={{ mb: 4 }}>
+            {['Datos', 'Confirmación', 'Comprobante'].map((label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
+          </Stepper>
 
-              {error && (
-                <Alert severity="error" sx={{ mb: 3 }} icon={<ErrorOutline />} onClose={() => setError(null)}>
-                  {error}
-                </Alert>
+          {error && <Alert severity="error" icon={<ErrorOutline />} sx={{ mb: 3 }}>{error}</Alert>}
+
+          {loadingAccounts ? (
+            <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress /><Typography color="text.secondary" sx={{ mt: 2 }}>Cargando cuentas habilitadas…</Typography></Box>
+          ) : accounts.length === 0 ? (
+            <Alert severity="info">No tienes cuentas activas habilitadas para transferencias P2P.</Alert>
+          ) : step === 0 ? (
+            <Grid container spacing={2.5}>
+              <Grid size={{ xs: 12 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Cuenta origen</InputLabel>
+                  <Select value={sourceAccount} label="Cuenta origen" onChange={(event) => setSourceAccount(event.target.value)}>
+                    {accounts.map((account) => <MenuItem key={account.accountNumber} value={account.accountNumber}>{getAccountLabel(account)} · {account.accountNumber.slice(-4)} · Disponible {formatCurrency(account.availableBalance)}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, md: 7 }}>
+                <TextField
+                  fullWidth
+                  label="Cuenta destino"
+                  value={targetAccount}
+                  onChange={(event) => setTargetAccount(event.target.value.replace(/\D/g, ''))}
+                  inputProps={{ inputMode: 'numeric' }}
+                  helperText="Ingresa el número completo. Podrás revisarlo nuevamente antes de confirmar."
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 5 }}>
+                <TextField
+                  fullWidth
+                  label="Monto"
+                  value={amount}
+                  onChange={(event) => {
+                    const nextValue = event.target.value.replace(',', '.');
+                    if (/^\d*(\.\d{0,2})?$/.test(nextValue)) setAmount(nextValue);
+                  }}
+                  inputProps={{ inputMode: 'decimal' }}
+                  InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+                  helperText="Dólares de los Estados Unidos (USD)"
+                />
+              </Grid>
+              <Grid size={{ xs: 12 }}><TextField fullWidth label="Concepto o referencia" value={reference} onChange={(event) => setReference(event.target.value)} inputProps={{ maxLength: 140 }} helperText={`${reference.length}/140`} /></Grid>
+              {selectedAccount && (
+                <Grid size={{ xs: 12 }}>
+                  <Alert severity="info">Saldo disponible de la cuenta origen: <strong>{formatCurrency(selectedAccount.availableBalance)}</strong></Alert>
+                </Grid>
               )}
+              <Grid size={{ xs: 12 }}><Box sx={{ display: 'flex', justifyContent: 'flex-end' }}><Button variant="contained" size="large" startIcon={<SwapHoriz />} onClick={validateBeneficiary} disabled={validating || submitting} sx={{ bgcolor: '#123f70' }}>{validating ? 'Validando destinatario…' : 'Continuar'}</Button></Box></Grid>
+            </Grid>
+          ) : step === 1 && beneficiary && selectedAccount ? (
+            <Box>
+              <Typography variant="h6" fontWeight={800} sx={{ mb: 2 }}>Revisa antes de confirmar</Typography>
+              <Card variant="outlined"><CardContent>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography variant="caption" color="text.secondary">Cuenta origen</Typography>
+                    <Typography fontWeight={750}>{getAccountLabel(selectedAccount)}</Typography>
+                    <AccountNumberDisplay value={selectedAccount.accountNumber} compact={false} fontWeight={650} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <Typography variant="caption" color="text.secondary">Cuenta destino</Typography>
+                    <Typography fontWeight={750}>{beneficiaryLabel(beneficiary)}</Typography>
+                    <AccountNumberDisplay value={beneficiary.accountNumber} compact={false} fontWeight={650} />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 6 }}><Typography variant="caption" color="text.secondary">Monto</Typography><Typography variant="h5" fontWeight={850} color="#123f70">{formatCurrency(Number(amount))}</Typography></Grid>
+                  <Grid size={{ xs: 12, md: 6 }}><Typography variant="caption" color="text.secondary">Referencia</Typography><Typography fontWeight={650}>{reference}</Typography></Grid>
+                </Grid>
+              </CardContent></Card>
+              <Alert severity={beneficiary.verified ? 'warning' : 'info'} sx={{ mt: 2.5 }}>
+                {beneficiary.verified
+                  ? 'Verifica el beneficiario, el monto y ambos números de cuenta. Usa el ícono del ojo para mostrar el número completo antes de confirmar.'
+                  : 'El Core todavía no expone el titular de cuentas de terceros. Verifica el número completo con el ícono del ojo; el Core validará existencia y estado al confirmar.'}
+              </Alert>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}><Button onClick={() => setStep(0)} disabled={submitting}>Regresar</Button><Button variant="contained" onClick={submitTransfer} disabled={submitting} sx={{ bgcolor: '#123f70' }}>{submitting ? 'Procesando transferencia…' : 'Confirmar transferencia'}</Button></Box>
+            </Box>
+          ) : step === 2 && result && beneficiary && selectedAccount ? (
+            <Box sx={{ textAlign: 'center' }}>
+              <CheckCircle sx={{ fontSize: 72, color: 'success.main', mb: 1.5 }} />
+              <Typography variant="h5" fontWeight={850}>Transferencia procesada</Typography>
+              <Typography color="text.secondary" sx={{ mb: 3 }}>
+                La operación fue registrada correctamente. Conserva el comprobante para cualquier consulta.
+              </Typography>
 
-              {activeStep === 0 && (
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 600, color: '#0066CC', mb: 3 }}>
-                    Datos de la transferencia
-                  </Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12}>
-                      <FormControl fullWidth>
-                        <InputLabel>Cuenta de Origen *</InputLabel>
-                        <Select
-                          value={sourceAccount}
-                          onChange={(e) => setSourceAccount(e.target.value)}
-                          label="Cuenta de Origen *"
-                        >
-                          {accounts.map((account) => (
-                            <MenuItem key={account.accountNumber} value={account.accountNumber}>
-                              {account.accountType === 'CHECKING' ? 'Cuenta Corriente' :
-                               account.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                               account.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : account.accountType} - {account.accountNumber} -
-                              Disponible: ${(account.availableBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} {account.currency}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
+              <Card variant="outlined" sx={{ textAlign: 'left', maxWidth: 760, mx: 'auto', borderColor: '#dce3ea' }}>
+                <CardContent sx={{ p: { xs: 2.5, md: 3.5 } }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Estado</Typography>
+                      <Typography fontWeight={800} color="success.main">{humanizeStatus(result.status) || 'Procesada'}</Typography>
+                    </Box>
+                    <Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+                      <Typography variant="caption" color="text.secondary">Fecha y hora</Typography>
+                      <Typography fontWeight={700}>{formatDateTime(result.timestamp)}</Typography>
+                    </Box>
+                  </Box>
+
+                  <Divider sx={{ my: 2.5 }} />
+                  <Typography variant="subtitle1" fontWeight={850} color="#123f70" sx={{ mb: 1.5 }}>Cuenta de origen</Typography>
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="caption" color="text.secondary">Titular</Typography>
+                      <Typography fontWeight={700}>{selectedAccount.holderName || session?.profile.username || 'Titular de la cuenta'}</Typography>
                     </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Número de Cuenta Destino *"
-                        placeholder="Ingresa el número de cuenta (16 dígitos)"
-                        value={destinationAccount}
-                        onChange={(e) => setDestinationAccount(e.target.value.replace(/\D/g, ''))}
-                        inputProps={{ maxLength: 18 }}
-                        helperText="Ejemplo: 9876543210987654"
-                      />
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="caption" color="text.secondary">Cuenta</Typography>
+                      <AccountNumberDisplay value={selectedAccount.accountNumber} compact={false} fontWeight={700} />
                     </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Monto *"
-                        type="number"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        InputProps={{
-                          startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>,
-                        }}
-                        inputProps={{ min: 0, step: 0.01 }}
-                      />
+                    {getAccountProductLabel(selectedAccount) && (
+                      <Grid size={{ xs: 12 }}>
+                        <Typography variant="caption" color="text.secondary">Producto</Typography>
+                        <Typography fontWeight={650}>{getAccountProductLabel(selectedAccount)}</Typography>
+                      </Grid>
+                    )}
+                  </Grid>
+
+                  <Divider sx={{ my: 2.5 }} />
+                  <Typography variant="subtitle1" fontWeight={850} color="#123f70" sx={{ mb: 1.5 }}>Cuenta de destino</Typography>
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="caption" color="text.secondary">Beneficiario</Typography>
+                      <Typography fontWeight={700}>{beneficiaryLabel(beneficiary)}</Typography>
                     </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Concepto *"
-                        placeholder="Describe el motivo de la transferencia"
-                        value={concept}
-                        onChange={(e) => setConcept(e.target.value)}
-                        inputProps={{ maxLength: 100 }}
-                      />
+                    <Grid size={{ xs: 12, md: 6 }}>
+                      <Typography variant="caption" color="text.secondary">Cuenta</Typography>
+                      <AccountNumberDisplay value={beneficiary.accountNumber} compact={false} fontWeight={700} />
                     </Grid>
-                    <Grid item xs={12}>
-                      <TextField
-                        fullWidth
-                        label="Referencia numérica (opcional)"
-                        placeholder="1234567"
-                        value={reference}
-                        onChange={(e) => setReference(e.target.value.replace(/\D/g, ''))}
-                        inputProps={{ maxLength: 7 }}
-                      />
+                    <Grid size={{ xs: 12 }}>
+                      <Typography variant="caption" color="text.secondary">Institución financiera</Typography>
+                      <Typography fontWeight={650}>Banco BanQuito</Typography>
                     </Grid>
                   </Grid>
-                  <Alert severity="info" sx={{ mt: 3 }}>
-                    <strong>Nota:</strong> Verifica que los datos sean correctos antes de continuar.
-                    Se validará el destinatario antes de procesar la transferencia.
-                  </Alert>
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
-                    <Button
-                      variant="contained"
-                      onClick={handleNext}
-                      disabled={loading}
-                      sx={{ bgcolor: '#10B981', px: 4 }}
-                    >
-                      Continuar
-                    </Button>
-                  </Box>
-                </Box>
-              )}
 
-              {activeStep === 1 && (
-                <Box sx={{ textAlign: 'center', py: 6 }}>
-                  <CircularProgress size={60} sx={{ color: '#0066CC', mb: 3 }} />
-                  <Typography variant="h6" sx={{ fontWeight: 600, color: '#0066CC', mb: 1 }}>
-                    Validando destinatario...
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: '#666' }}>
-                    Por favor espera mientras verificamos los datos de la cuenta destino
-                  </Typography>
-                </Box>
-              )}
-
-              {activeStep === 2 && (
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 600, color: '#0066CC', mb: 3 }}>
-                    Confirma los datos de tu transferencia
-                  </Typography>
-
-                  {destinationHolder && (
-                    <Alert severity="success" sx={{ mb: 3 }} icon={<CheckCircle />}>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        Destinatario verificado: {destinationHolder}
-                      </Typography>
-                      <Typography variant="caption">
-                        Verifica que sea la persona correcta antes de continuar
-                      </Typography>
-                    </Alert>
-                  )}
-
-                  <Box sx={{ bgcolor: '#f8f9fa', borderRadius: 2, p: 3, mb: 3 }}>
+                  <Box sx={{ mt: 2.5, p: 2.5, borderRadius: 2.5, bgcolor: '#f6f8fb' }}>
                     <Grid container spacing={2}>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" sx={{ color: '#999' }}>Cuenta Origen</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                          {sourceAccount}
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <Typography variant="caption" color="text.secondary">Monto transferido</Typography>
+                        <Typography variant="h6" fontWeight={850} color="#123f70">{formatCurrency(result.amount)}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <Typography variant="caption" color="text.secondary">Comisión</Typography>
+                        <Typography variant="h6" fontWeight={800}>{formatCurrency(result.fee ?? 0)}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <Typography variant="caption" color="text.secondary">Total debitado</Typography>
+                        <Typography variant="h6" fontWeight={850}>{formatCurrency(result.amount + (result.fee ?? 0))}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 7 }}>
+                        <Typography variant="caption" color="text.secondary">Concepto o referencia</Typography>
+                        <Typography fontWeight={650}>{reference || 'Sin referencia'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 5 }}>
+                        <Typography variant="caption" color="text.secondary">Nuevo saldo disponible</Typography>
+                        <Typography fontWeight={800} color="success.main">
+                          {result.newBalance !== undefined ? formatCurrency(result.newBalance) : 'Consulta tu saldo actualizado'}
                         </Typography>
                       </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" sx={{ color: '#999' }}>Cuenta Destino</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{destinationAccount}</Typography>
-                      </Grid>
-                      <Grid item xs={12}>
-                        <Typography variant="caption" sx={{ color: '#999' }}>Beneficiario</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#0066CC' }}>
-                          {destinationHolder}
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" sx={{ color: '#999' }}>Monto</Typography>
-                        <Typography variant="h6" sx={{ fontWeight: 700, color: '#0066CC' }}>
-                          ${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                        </Typography>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Typography variant="caption" sx={{ color: '#999' }}>Comisión</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#4caf50' }}>$0.00</Typography>
-                      </Grid>
-                      <Grid item xs={12}>
-                        <Typography variant="caption" sx={{ color: '#999' }}>Concepto</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{concept}</Typography>
-                      </Grid>
-                      {reference && (
-                        <Grid item xs={12}>
-                          <Typography variant="caption" sx={{ color: '#999' }}>Referencia</Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{reference}</Typography>
-                        </Grid>
-                      )}
                     </Grid>
                   </Box>
-                  <Alert severity="warning" sx={{ mb: 3 }}>
-                    <strong>Importante:</strong> Verifica que todos los datos sean correctos.
-                    Esta operación no se puede cancelar una vez confirmada.
-                  </Alert>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
-                    <Button onClick={handleBack} disabled={loading}>
-                      Modificar Datos
-                    </Button>
-                    <Button
-                      variant="contained"
-                      onClick={handleNext}
-                      disabled={loading}
-                      sx={{ bgcolor: '#10B981', px: 4 }}
-                    >
-                      {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : 'Confirmar Transferencia'}
-                    </Button>
-                  </Box>
-                </Box>
-              )}
 
-              {activeStep === 3 && transferResult && (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <CheckCircle sx={{ fontSize: 80, color: '#10B981', mb: 2 }} />
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: '#0066CC', mb: 1 }}>
-                    ¡Transferencia Exitosa!
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: '#666', mb: 4 }}>
-                    Tu transferencia ha sido procesada correctamente
-                  </Typography>
-                  <Box sx={{ bgcolor: '#f8f9fa', borderRadius: 2, p: 3, mb: 3, textAlign: 'left' }}>
-                    <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
-                      Número de Operación
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 700, color: '#0066CC', mb: 2 }}>
-                      {transferResult.transactionId?.substring(0, 8).toUpperCase()}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
-                      Fecha y Hora
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
-                      {new Date(transferResult.timestamp).toLocaleString('es-EC', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit'
-                      })}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
-                      Beneficiario
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 600, mb: 2 }}>
-                      {destinationHolder}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
-                      Monto Transferido
-                    </Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#0066CC', mb: 2 }}>
-                      ${(transferResult.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#999', display: 'block', mb: 0.5 }}>
-                      Nuevo Saldo
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#10B981' }}>
-                      ${(transferResult.newBalance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                    </Typography>
+                  <Divider sx={{ my: 2.5 }} />
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Referencia de transacción</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography fontFamily="monospace" fontSize="0.88rem" sx={{ wordBreak: 'break-all', flex: 1 }}>
+                        {result.transactionUuid}
+                      </Typography>
+                      <Tooltip title="Copiar referencia">
+                        <Button size="small" onClick={copyTransactionReference} startIcon={<ContentCopy fontSize="small" />}>Copiar</Button>
+                      </Tooltip>
+                    </Box>
                   </Box>
-                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-                    <Button
-                      variant="outlined"
-                      startIcon={<Receipt />}
-                      sx={{ borderColor: '#0066CC', color: '#0066CC' }}
-                    >
-                      Descargar Comprobante
-                    </Button>
-                    <Button
-                      variant="contained"
-                      sx={{ bgcolor: '#10B981' }}
-                      onClick={resetForm}
-                    >
-                      Nueva Transferencia
-                    </Button>
-                  </Box>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+                </CardContent>
+              </Card>
+
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5, mt: 3, flexWrap: 'wrap' }}>
+                <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={downloadReceipt}>Descargar PDF</Button>
+                <Button variant="outlined" startIcon={<Print />} onClick={printReceipt}>Imprimir</Button>
+                <Button variant="outlined" startIcon={<ReceiptLong />} onClick={() => navigate('/cuentas', { state: { accountNumber: selectedAccount.accountNumber } })}>Ver movimientos</Button>
+                <Button variant="contained" onClick={reset} sx={{ bgcolor: '#123f70' }}>Nueva transferencia</Button>
+              </Box>
+            </Box>
+          ) : null}
+        </CardContent>
+      </Card>
     </Layout>
   );
 }

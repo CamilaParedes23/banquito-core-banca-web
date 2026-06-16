@@ -1,566 +1,378 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
 import {
-  Grid,
-  Card,
-  CardContent,
-  Typography,
+  Alert,
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
-  Alert,
-  CircularProgress,
-  IconButton,
   Divider,
+  FormControl,
+  Grid,
+  IconButton,
+  InputLabel,
+  LinearProgress,
+  MenuItem,
+  Select,
+  Skeleton,
+  Stack,
+  Tooltip,
+  Typography,
 } from '@mui/material';
 import {
-  TrendingUp,
-  TrendingDown,
   AccountBalance,
-  CreditCard,
-  Savings,
+  ArrowForward,
+  BusinessCenter,
+  OpenInNew,
+  ReceiptLong,
   Refresh,
   Visibility,
   VisibilityOff,
-  ArrowForward,
-  Receipt,
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router';
 import Layout from '../components/Layout';
-import { apiService, getErrorMessage, Account } from '../services/api';
+import AccountRail from '../components/AccountRail';
+import { env } from '../config/env';
 import { accountService } from '../services/account.service';
+import { customerService } from '../services/customer.service';
+import { getFriendlyApiError } from '../services/http.service';
+import { sessionService } from '../services/session.service';
+import type { AccountResponse, TransactionResponse } from '../types/account.types';
+import {
+  formatCurrency,
+  formatDateTime,
+  getAccountLabel,
+  getTransactionLabel,
+} from '../utils/formatters';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [balanceVisibility, setBalanceVisibility] = useState<Record<string, boolean>>({});
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const session = sessionService.get();
+  const customerUuid = session?.profile.customerUuid || '';
+  const isCompany = session?.profile.roles.includes('CLIENTE_EMPRESA') ?? false;
+  const canTransfer = session?.profile.scopes.includes('core.account.transfer.p2p') ?? false;
+
+  const [accounts, setAccounts] = useState<AccountResponse[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [accountsError, setAccountsError] = useState('');
+  const [showBalances, setShowBalances] = useState(true);
+  const [selectedAccount, setSelectedAccount] = useState('');
+  const [transactions, setTransactions] = useState<TransactionResponse[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
-  const [monthlyIncome, setMonthlyIncome] = useState(0);
-  const [monthlyExpenses, setMonthlyExpenses] = useState(0);
-  const customerId = localStorage.getItem('actor_uuid') || 'CUST-001'; // Usar UUID del cliente del localStorage
+  const [transactionsError, setTransactionsError] = useState('');
+  const [massPaymentsEnabled, setMassPaymentsEnabled] = useState<boolean | undefined>(undefined);
+  const [loadingCompanyProfile, setLoadingCompanyProfile] = useState(false);
 
-  // RF-03: Consumir API de saldos al cargar el dashboard
-  const fetchAccounts = async () => {
-    setLoading(true);
-    setError(null);
+  const loadAccounts = async () => {
+    setLoadingAccounts(true);
+    setAccountsError('');
     try {
-      const response = await apiService.getAccounts(customerId);
-      setAccounts(response.accounts);
-      
-      // Cargar transacciones de todas las cuentas para calcular ingresos y gastos del mes
-      const allTransactions: any[] = [];
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      
-      for (const account of response.accounts) {
-        try {
-          const txns = await accountService.getAccountTransactions({
-            accountNumber: account.accountNumber,
-            limit: 100, // Obtener más transacciones para calcular del mes
-          });
-          allTransactions.push(...txns);
-        } catch (err) {
-          // Silenciar error al obtener transacciones de una cuenta
-        }
-      }
-      
-      setTransactions(allTransactions);
-
-      // Calcular ingresos y gastos del mes actual
-      let income = 0;
-      let expenses = 0;
-      
-      allTransactions.forEach((txn) => {
-        const txnDate = new Date(txn.date);
-        if (txnDate.getMonth() === currentMonth && txnDate.getFullYear() === currentYear) {
-          if (txn.type === 'CREDIT' || txn.movementType === 'CREDITO') {
-            income += Math.abs(txn.amount || 0);
-          } else if (txn.type === 'DEBIT' || txn.movementType === 'DEBITO') {
-            expenses += Math.abs(txn.amount || 0);
-          }
-        }
-      });
-
-      setMonthlyIncome(income);
-      setMonthlyExpenses(expenses);
-    } catch (err) {
-      setError(getErrorMessage(err));
+      const data = await accountService.getAccountsByCustomer(customerUuid, { includeBalance: true });
+      setAccounts(data);
+      setSelectedAccount((current) =>
+        data.some((account) => account.accountNumber === current)
+          ? current
+          : data[0]?.accountNumber || '',
+      );
+    } catch (error) {
+      setAccountsError(getFriendlyApiError(error));
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchTransactions = async (accountNumber: string) => {
-    setLoadingTransactions(true);
-    try {
-      const response = await accountService.getAccountTransactions({
-        accountNumber,
-        limit: 5,
-      });
-      setTransactions(response);
-    } catch (err) {
-      setTransactions([]);
-    } finally {
-      setLoadingTransactions(false);
+      setLoadingAccounts(false);
     }
   };
 
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    void loadAccounts();
+  }, [customerUuid]);
 
-  // Función helper para obtener icono según tipo de cuenta
-  const getAccountIcon = (type: string) => {
-    if (!type) return <AccountBalance />;
-    switch (type.toLowerCase()) {
-      case 'savings':
-      case 'ahorros':
-        return <Savings />;
-      case 'credit':
-      case 'credito':
-        return <CreditCard />;
-      default:
-        return <AccountBalance />;
+  useEffect(() => {
+    if (!isCompany || !customerUuid) return;
+    let active = true;
+    setLoadingCompanyProfile(true);
+    customerService
+      .getCustomer(customerUuid)
+      .then((customer) => {
+        if (active) setMassPaymentsEnabled(customerService.getMassPaymentsEnabled(customer));
+      })
+      .catch(() => {
+        if (active) setMassPaymentsEnabled(undefined);
+      })
+      .finally(() => {
+        if (active) setLoadingCompanyProfile(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [customerUuid, isCompany]);
+
+  useEffect(() => {
+    if (!selectedAccount) {
+      setTransactions([]);
+      return;
     }
-  };
+    let active = true;
+    setLoadingTransactions(true);
+    setTransactionsError('');
+    accountService
+      .getTransactions({ accountNumber: selectedAccount, limit: 5 })
+      .then((data) => active && setTransactions(data))
+      .catch((error) => active && setTransactionsError(getFriendlyApiError(error)))
+      .finally(() => active && setLoadingTransactions(false));
+    return () => {
+      active = false;
+    };
+  }, [selectedAccount]);
 
-  // Función helper para obtener color según tipo de cuenta
-  const getAccountColor = (type: string) => {
-    if (!type) return '#0f3460';
-    switch (type.toLowerCase()) {
-      case 'savings':
-      case 'ahorros':
-        return '#D4AF37';
-      case 'credit':
-      case 'credito':
-        return '#e53935';
-      default:
-        return '#0f3460';
-    }
-  };
+  const totals = useMemo(
+    () =>
+      accounts.reduce(
+        (summary, account) => ({
+          accounting: summary.accounting + account.accountingBalance,
+          available: summary.available + account.availableBalance,
+          withheld: summary.withheld + (account.withheldAmount || 0),
+          active: summary.active + (['ACTIVA', 'ACTIVE'].includes(account.status.toUpperCase()) ? 1 : 0),
+        }),
+        { accounting: 0, available: 0, withheld: 0, active: 0 },
+      ),
+    [accounts],
+  );
 
-  // Formatear número de cuenta para mostrar solo últimos 4 dígitos con formato de seguridad
-  const formatAccountNumber = (accountNumber: string) => {
-    const lastFour = accountNumber.slice(-4);
-    return `Nº ********${lastFour}`;
-  };
+  const distribution = useMemo(() => {
+    const positiveTotal = accounts.reduce((sum, account) => sum + Math.max(account.availableBalance, 0), 0);
+    return [...accounts]
+      .sort((a, b) => b.availableBalance - a.availableBalance)
+      .slice(0, 5)
+      .map((account) => ({
+        account,
+        percentage: positiveTotal > 0 ? (Math.max(account.availableBalance, 0) / positiveTotal) * 100 : 0,
+      }));
+  }, [accounts]);
 
-  // Toggle visibilidad de saldo
-  const toggleBalanceVisibility = (accountNumber: string) => {
-    setBalanceVisibility(prev => ({
-      ...prev,
-      [accountNumber]: !prev[accountNumber]
-    }));
-  };
+  const mainPaymentAccount = accounts.find((account) => account.massPaymentMainAccount);
+  const selectedAccountData = accounts.find((account) => account.accountNumber === selectedAccount);
 
-  // Verificar si el saldo está visible
-  const isBalanceVisible = (accountNumber: string) => {
-    return balanceVisibility[accountNumber] !== false; // Por defecto visible
+  const openSwitchPortal = () => {
+    if (env.switchPortalUrl) window.location.assign(env.switchPortalUrl);
   };
-
-  const recentTransactions = transactions.map((txn) => ({
-    description: txn.description || 'Transacción',
-    amount: txn.amount || 0,
-    date: txn.date || new Date().toISOString(),
-    category: txn.type === 'CREDIT' ? 'Ingreso' : 'Egreso',
-  }));
 
   return (
     <Layout>
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ mb: 3.5, display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: '#0f3460', mb: 1 }}>
-            Panel Consolidado
+          <Typography variant="h4" sx={{ fontWeight: 850, color: '#123f70', mb: 0.5 }}>
+            {isCompany ? 'Panel empresarial' : 'Panel personal'}
           </Typography>
-          <Typography variant="body1" sx={{ color: '#666' }}>
-            Balance actual de tus cuentas
+          <Typography color="text.secondary">
+            {isCompany
+              ? 'Controla tus cuentas y el acceso a los servicios empresariales de BanQuito.'
+              : 'Consulta tus saldos y gestiona tus operaciones desde un solo lugar.'}
           </Typography>
         </Box>
-        <Button
-          startIcon={<Refresh />}
-          onClick={fetchAccounts}
-          disabled={loading}
-          sx={{ color: '#0f3460' }}
-        >
+        <Button startIcon={<Refresh />} onClick={loadAccounts} disabled={loadingAccounts}>
           Actualizar
         </Button>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+      {accountsError && (
+        <Alert severity="error" action={<Button color="inherit" onClick={loadAccounts}>Reintentar</Button>} sx={{ mb: 3 }}>
+          {accountsError}
         </Alert>
       )}
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-          <CircularProgress sx={{ color: '#0f3460' }} />
-        </Box>
-      ) : (
-        <Grid container spacing={3}>
-          {accounts.map((account, index) => (
-          <Grid size={{ xs: 12, md: 6, lg: 4 }} key={index}>
-            <Card
-              sx={{
-                height: '100%',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
-                borderRadius: 3,
-                border: '1px solid #f0f0f0',
-                transition: 'all 0.3s ease',
-                '&:hover': {
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                  transform: 'translateY(-4px)',
-                },
-              }}
-            >
-              <CardContent sx={{ p: 3 }}>
-                {/* Header con tipo de cuenta e icono */}
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: 700,
-                        color: '#1a1a1a',
-                        mb: 0.5,
-                        fontSize: '0.95rem',
-                        letterSpacing: '0.3px',
-                      }}
-                    >
-                      {account.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                       account.accountType === 'CHECKING' ? 'Cuenta Corriente' :
-                       account.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : account.accountType}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: '#666',
-                        fontWeight: 500,
-                        letterSpacing: '0.5px',
-                      }}
-                    >
-                      {formatAccountNumber(account.accountNumber)}
-                    </Typography>
-                  </Box>
-                  <Box
-                    sx={{
-                      p: 1,
-                      borderRadius: 2,
-                      bgcolor: `${getAccountColor(account.accountType)}10`,
-                      color: getAccountColor(account.accountType),
-                    }}
-                  >
-                    {getAccountIcon(account.accountType)}
-                  </Box>
-                </Box>
-
-                <Divider sx={{ mb: 3 }} />
-
-                {/* Sección de Saldo Disponible con toggle de visibilidad */}
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: '#666',
-                      display: 'block',
-                      mb: 1,
-                      fontWeight: 600,
-                      textTransform: 'uppercase',
-                      fontSize: '0.7rem',
-                      letterSpacing: '0.8px',
-                    }}
-                  >
-                    Saldo Disponible
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography
-                      variant="h4"
-                      sx={{
-                        fontWeight: 700,
-                        color: getAccountColor(account.accountType),
-                        letterSpacing: '-0.5px',
-                      }}
-                    >
-                      {isBalanceVisible(account.accountNumber)
-                        ? `$${account.availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                        : '$ •••••••'
-                      }
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => toggleBalanceVisibility(account.accountNumber)}
-                      sx={{
-                        color: '#666',
-                        '&:hover': {
-                          bgcolor: '#f5f5f5',
-                        },
-                      }}
-                    >
-                      {isBalanceVisible(account.accountNumber) ? (
-                        <Visibility fontSize="small" />
-                      ) : (
-                        <VisibilityOff fontSize="small" />
-                      )}
-                    </IconButton>
-                  </Box>
-                </Box>
-
-                {/* Estado de cuenta */}
-                <Box sx={{ mb: 3 }}>
-                  <Chip
-                    label={account.status === 'ACTIVE' ? 'Activa' : account.status}
-                    size="small"
-                    sx={{
-                      bgcolor: account.status === 'ACTIVE' ? '#fef3c7' : '#ffebee',
-                      color: account.status === 'ACTIVE' ? '#D4AF37' : '#e53935',
-                      fontWeight: 600,
-                      fontSize: '0.7rem',
-                      height: 24,
-                    }}
-                  />
-                </Box>
-
-                {/* Botones de Acción */}
-                <Box sx={{ display: 'flex', gap: 1.5 }}>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    endIcon={<ArrowForward fontSize="small" />}
-                    onClick={() => navigate('/transferencias')}
-                    sx={{
-                      bgcolor: '#0f3460',
-                      color: 'white',
-                      fontWeight: 600,
-                      fontSize: '0.8rem',
-                      py: 1,
-                      textTransform: 'none',
-                      borderRadius: 2,
-                      boxShadow: '0 2px 8px rgba(15, 52, 96, 0.25)',
-                      '&:hover': {
-                        bgcolor: '#16213e',
-                        boxShadow: '0 4px 12px rgba(15, 52, 96, 0.35)',
-                      },
-                    }}
-                  >
-                    Transferir
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    endIcon={<Receipt fontSize="small" />}
-                    onClick={() => navigate('/cuentas')}
-                    sx={{
-                      borderColor: '#0f3460',
-                      color: '#0f3460',
-                      fontWeight: 600,
-                      fontSize: '0.8rem',
-                      py: 1,
-                      textTransform: 'none',
-                      borderRadius: 2,
-                      '&:hover': {
-                        borderColor: '#16213e',
-                        bgcolor: '#f0f7ff',
-                      },
-                    }}
-                  >
-                    Movimientos
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+      {loadingAccounts ? (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Grid key={index} size={{ xs: 12, sm: 6, xl: 3 }}>
+              <Card><CardContent><Skeleton width="55%" /><Skeleton height={48} /></CardContent></Card>
+            </Grid>
           ))}
+        </Grid>
+      ) : accounts.length > 0 ? (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {[
+            { label: 'Cuentas activas', value: String(totals.active), money: false },
+            { label: 'Saldo contable total', value: totals.accounting, money: true },
+            { label: 'Saldo disponible total', value: totals.available, money: true },
+            { label: 'Fondos retenidos', value: totals.withheld, money: true },
+          ].map((item) => (
+            <Grid key={item.label} size={{ xs: 12, sm: 6, xl: 3 }}>
+              <Card variant="outlined" sx={{ height: '100%' }}>
+                <CardContent sx={{ py: 2.25 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.65, fontWeight: 750 }}>
+                    {item.label}
+                  </Typography>
+                  <Typography variant="h5" sx={{ mt: 0.75, fontWeight: 900, color: '#123f70' }}>
+                    {item.money ? (showBalances ? formatCurrency(Number(item.value)) : '$ ••••••') : item.value}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      ) : null}
 
-        <Grid size={{ xs: 12, lg: 8 }}>
-          <Card sx={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid #f0f0f0' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.3px' }}>
-                  Movimientos Recientes
-                </Typography>
-                <Button
-                  size="small"
-                  endIcon={<ArrowForward fontSize="small" />}
-                  onClick={() => navigate('/cuentas')}
-                  sx={{
-                    color: '#0f3460',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    '&:hover': {
-                      bgcolor: '#f0f7ff',
-                    },
-                  }}
-                >
-                  Ver Todos
-                </Button>
+      {!loadingAccounts && accounts.length === 0 && !accountsError && (
+        <Alert severity="info">No tienes cuentas asociadas a tu perfil.</Alert>
+      )}
+
+      {!loadingAccounts && accounts.length > 0 && (
+        <>
+          <Card sx={{ border: '1px solid #e5e7eb', mb: 3 }}>
+            <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, alignItems: 'center', mb: 2 }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={850}>Mis cuentas</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Selecciona una cuenta para consultar sus últimos movimientos.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <Tooltip title={showBalances ? 'Ocultar saldos' : 'Mostrar saldos'}>
+                    <IconButton onClick={() => setShowBalances((current) => !current)} aria-label={showBalances ? 'Ocultar saldos' : 'Mostrar saldos'}>
+                      {showBalances ? <Visibility /> : <VisibilityOff />}
+                    </IconButton>
+                  </Tooltip>
+                  <Button onClick={() => navigate('/cuentas')}>Ver todas</Button>
+                </Stack>
               </Box>
-              <Divider sx={{ mb: 2 }} />
-              {recentTransactions.map((transaction, index) => (
-                <Box
-                  key={index}
-                  sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    py: 2.5,
-                    px: 2,
-                    borderRadius: 2,
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      bgcolor: '#f8f9fa',
-                    },
-                    borderBottom: index < recentTransactions.length - 1 ? '1px solid #f0f0f0' : 'none',
-                  }}
-                >
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#1a1a1a', mb: 0.5 }}>
-                      {transaction.description}
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-                      <Typography variant="caption" sx={{ color: '#999', fontWeight: 500 }}>
-                        {transaction.date}
-                      </Typography>
-                      <Chip
-                        label={transaction.category}
-                        size="small"
-                        sx={{
-                          height: 20,
-                          fontSize: '0.7rem',
-                          bgcolor: '#f0f0f0',
-                          color: '#666',
-                          fontWeight: 600,
-                        }}
-                      />
+              <AccountRail
+                accounts={accounts}
+                selectedAccountNumber={selectedAccount}
+                showBalances={showBalances}
+                onSelect={(account) => setSelectedAccount(account.accountNumber)}
+              />
+            </CardContent>
+          </Card>
+
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid size={{ xs: 12, lg: 6 }}>
+              <Card sx={{ height: '100%', border: '1px solid #e5e7eb' }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" fontWeight={850}>
+                    {isCompany ? 'Pagos empresariales' : 'Accesos rápidos'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
+                    {isCompany
+                      ? 'El servicio de pagos masivos se administra desde el portal especializado del Switch.'
+                      : 'Accede rápidamente a las operaciones más utilizadas.'}
+                  </Typography>
+
+                  {isCompany ? (
+                    <>
+                      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 2 }}>
+                        <Chip
+                          label={loadingCompanyProfile ? 'Consultando servicio…' : massPaymentsEnabled === true ? 'Pagos masivos habilitados' : massPaymentsEnabled === false ? 'Pagos masivos no habilitados' : 'Estado no informado'}
+                          color={massPaymentsEnabled === true ? 'success' : massPaymentsEnabled === false ? 'warning' : 'default'}
+                          variant="outlined"
+                        />
+                        {mainPaymentAccount && <Chip label={`Cuenta matriz · ${mainPaymentAccount.accountNumber.slice(-4)}`} color="primary" variant="outlined" />}
+                      </Stack>
+                      <Alert severity={massPaymentsEnabled === false ? 'info' : 'success'} sx={{ mb: 2.5 }}>
+                        {massPaymentsEnabled === false
+                          ? 'La habilitación del servicio se realiza desde Backoffice por un usuario autorizado del banco.'
+                          : mainPaymentAccount
+                            ? `La cuenta ${getAccountLabel(mainPaymentAccount)} está marcada como cuenta matriz para pagos empresariales.`
+                            : 'La configuración de cuenta matriz se administra desde Backoffice.'}
+                      </Alert>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
+                        <Button variant="outlined" startIcon={<AccountBalance />} onClick={() => navigate('/cuentas')}>
+                          Ver cuentas
+                        </Button>
+                        <Button
+                          variant="contained"
+                          startIcon={<BusinessCenter />}
+                          endIcon={<OpenInNew />}
+                          onClick={openSwitchPortal}
+                          disabled={!env.switchPortalUrl || massPaymentsEnabled === false}
+                          sx={{ bgcolor: '#123f70' }}
+                        >
+                          Ir al Portal de Pagos Masivos
+                        </Button>
+                      </Stack>
+                      {!env.switchPortalUrl && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25 }}>
+                          El acceso se habilitará cuando el Portal del Switch esté desplegado.
+                        </Typography>
+                      )}
+                    </>
+                  ) : (
+                    <Grid container spacing={1.5}>
+                      {canTransfer && (
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <Button fullWidth variant="contained" startIcon={<ArrowForward />} onClick={() => navigate('/transferencias', { state: { sourceAccount: selectedAccount } })} sx={{ minHeight: 54, bgcolor: '#123f70' }}>
+                            Transferir dinero
+                          </Button>
+                        </Grid>
+                      )}
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <Button fullWidth variant="outlined" startIcon={<ReceiptLong />} onClick={() => navigate('/cuentas', { state: { accountNumber: selectedAccount } })} sx={{ minHeight: 54 }}>
+                          Ver movimientos
+                        </Button>
+                      </Grid>
+                    </Grid>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid size={{ xs: 12, lg: 6 }}>
+              <Card sx={{ height: '100%', border: '1px solid #e5e7eb' }}>
+                <CardContent sx={{ p: 3 }}>
+                  <Typography variant="h6" fontWeight={850}>Distribución del saldo disponible</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
+                    Participación de tus principales cuentas sobre el saldo disponible total.
+                  </Typography>
+                  <Stack spacing={1.75}>
+                    {distribution.map(({ account, percentage }) => (
+                      <Box key={account.accountNumber}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
+                          <Typography variant="body2" fontWeight={700} noWrap>{getAccountLabel(account)} · {account.accountNumber.slice(-4)}</Typography>
+                          <Typography variant="body2" fontWeight={750}>{showBalances ? formatCurrency(account.availableBalance) : '$ ••••••'}</Typography>
+                        </Box>
+                        <LinearProgress variant="determinate" value={Math.min(100, percentage)} sx={{ height: 7, borderRadius: 7, bgcolor: '#edf2f7', '& .MuiLinearProgress-bar': { bgcolor: '#d9b74a', borderRadius: 7 } }} />
+                      </Box>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          <Card sx={{ border: '1px solid #e8edf3' }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: { xs: 'stretch', md: 'center' }, justifyContent: 'space-between', gap: 2, flexDirection: { xs: 'column', md: 'row' }, mb: 2 }}>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 850 }}>Movimientos recientes</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {selectedAccountData ? `${getAccountLabel(selectedAccountData)} · ${selectedAccountData.accountNumber.slice(-4)}` : 'Selecciona una cuenta.'}
+                  </Typography>
+                </Box>
+                <FormControl size="small" sx={{ minWidth: 260 }}>
+                  <InputLabel>Cuenta</InputLabel>
+                  <Select value={selectedAccount} label="Cuenta" onChange={(event) => setSelectedAccount(event.target.value)}>
+                    {accounts.map((account) => <MenuItem key={account.accountNumber} value={account.accountNumber}>{getAccountLabel(account)} · {account.accountNumber.slice(-4)}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              </Box>
+              <Divider sx={{ mb: 1 }} />
+              {loadingTransactions && Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} height={66} />)}
+              {transactionsError && <Alert severity="warning" sx={{ my: 2 }}>{transactionsError}</Alert>}
+              {!loadingTransactions && !transactionsError && transactions.length === 0 && <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>No hay movimientos recientes para esta cuenta.</Typography>}
+              {!loadingTransactions && transactions.map((transaction) => {
+                const isCredit = transaction.type === 'CREDIT' || transaction.movementType === 'CREDITO';
+                return (
+                  <Box key={transaction.transactionUuid || `${transaction.date}-${transaction.amount}`} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 1.75, borderBottom: '1px solid #eef1f5' }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography fontWeight={700}>{getTransactionLabel(transaction)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{formatDateTime(transaction.date)}{transaction.reference ? ` · ${transaction.reference}` : ''}</Typography>
                     </Box>
+                    <Typography fontWeight={850} color={isCredit ? 'success.main' : 'text.primary'}>{isCredit ? '+' : '-'}{formatCurrency(Math.abs(transaction.amount))}</Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography
-                      variant="body1"
-                      sx={{
-                        fontWeight: 700,
-                        color: transaction.amount > 0 ? '#D4AF37' : '#1a1a1a',
-                        letterSpacing: '-0.3px',
-                      }}
-                    >
-                      {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </Typography>
-                    {transaction.amount > 0 ? (
-                      <TrendingUp sx={{ color: '#D4AF37', fontSize: 20 }} />
-                    ) : (
-                      <TrendingDown sx={{ color: '#999', fontSize: 20 }} />
-                    )}
-                  </Box>
-                </Box>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
-        </Grid>
-
-        <Grid size={{ xs: 12, lg: 4 }}>
-          <Card
-            sx={{
-              boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
-              borderRadius: 3,
-              background: 'linear-gradient(135deg, #0f3460 0%, #16213e 100%)',
-              border: '1px solid rgba(255,255,255,0.1)',
-            }}
-          >
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <Box
-                  sx={{
-                    p: 1.5,
-                    borderRadius: 2,
-                    bgcolor: 'rgba(212, 175, 55, 0.2)',
-                    mr: 2,
-                  }}
-                >
-                  <TrendingUp sx={{ color: '#D4AF37', fontSize: 28 }} />
-                </Box>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: 'white', letterSpacing: '-0.3px' }}>
-                  Resumen Financiero
-                </Typography>
-              </Box>
-              <Box sx={{ mb: 3 }}>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: 'rgba(255,255,255,0.8)',
-                    display: 'block',
-                    mb: 1,
-                    fontWeight: 600,
-                    textTransform: 'uppercase',
-                    fontSize: '0.7rem',
-                    letterSpacing: '0.8px',
-                  }}
-                >
-                  Balance Total
-                </Typography>
-                <Typography variant="h4" sx={{ fontWeight: 700, color: 'white', letterSpacing: '-0.5px' }}>
-                  ${accounts.reduce((sum, acc) => sum + acc.balance, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
-                </Typography>
-              </Box>
-              <Box sx={{ bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2, p: 2.5, mb: 3 }}>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: 'rgba(255,255,255,0.8)',
-                    display: 'block',
-                    mb: 1,
-                    fontWeight: 600,
-                    fontSize: '0.7rem',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  Ingresos del mes
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#D4AF37', mb: 2.5, letterSpacing: '-0.3px' }}>
-                  +${monthlyIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: 'rgba(255,255,255,0.8)',
-                    display: 'block',
-                    mb: 1,
-                    fontWeight: 600,
-                    fontSize: '0.7rem',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  Gastos del mes
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 700, color: '#f87171', letterSpacing: '-0.3px' }}>
-                  -${monthlyExpenses.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Typography>
-              </Box>
-              <Button
-                fullWidth
-                variant="contained"
-                sx={{
-                  bgcolor: '#D4AF37',
-                  color: '#0f3460',
-                  fontWeight: 700,
-                  py: 1.2,
-                  fontSize: '0.9rem',
-                  textTransform: 'none',
-                  borderRadius: 2,
-                  boxShadow: '0 4px 12px rgba(212, 175, 55, 0.3)',
-                  '&:hover': {
-                    bgcolor: '#B89928',
-                    boxShadow: '0 6px 16px rgba(212, 175, 55, 0.4)',
-                  },
-                }}
-              >
-                Ver Análisis Completo
-              </Button>
-            </CardContent>
-          </Card>
-        </Grid>
-        </Grid>
+        </>
       )}
     </Layout>
   );

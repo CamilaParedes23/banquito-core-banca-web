@@ -1,648 +1,411 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import {
-  Grid,
-  Card,
-  CardContent,
-  Typography,
+  Alert,
   Box,
   Button,
+  Card,
+  CardContent,
+  Chip,
+  Divider,
+  FormControl,
+  Grid,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
+  Skeleton,
+  Stack,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Chip,
-  IconButton,
-  Tabs,
-  Tab,
-  Divider,
   TextField,
-  MenuItem,
-  CircularProgress,
-  Alert,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
 } from '@mui/material';
 import {
   Download,
+  FilterAltOff,
+  Refresh,
+  SwapHoriz,
+  ViewAgenda,
+  ViewList,
   Visibility,
   VisibilityOff,
-  AccountBalance,
-  Savings,
-  TrendingUp,
-  TrendingDown,
-  ArrowForward,
-  CalendarToday,
-  AccountBalanceWallet,
-  Info,
 } from '@mui/icons-material';
-import { useNavigate } from 'react-router';
 import Layout from '../components/Layout';
-import { apiService, Account as ApiAccount } from '../services/api';
+import AccountNumberDisplay from '../components/AccountNumberDisplay';
+import AccountRail from '../components/AccountRail';
+import { accountService } from '../services/account.service';
+import { getFriendlyApiError } from '../services/http.service';
+import { sessionService } from '../services/session.service';
+import type { AccountResponse, TransactionResponse } from '../types/account.types';
+import {
+  formatCurrency,
+  formatDateOnly,
+  formatDateTime,
+  formatTimeOnly,
+  getAccountBranchLabel,
+  getAccountLabel,
+  getAccountProductLabel,
+  getAccountPurposeLabel,
+  getMovementTypeLabel,
+  getStatusPresentation,
+  getTransactionChannelLabel,
+  getTransactionLabel,
+  humanizeStatus,
+  maskAccountNumber,
+} from '../utils/formatters';
 
-interface Transaction {
-  id: number;
-  date: string;
-  description: string;
-  reference: string;
-  amount: number;
-  balance: number;
-  status: string;
+interface LocationState {
+  accountNumber?: string;
 }
 
-interface LocalAccount {
-  id: number;
-  accountNumber: string;
-  accountType: string;
-  balance: number;
-  availableBalance: number;
-  currency: string;
-  status: string;
-  holderName: string;
-  icon: React.ReactNode;
-  color: string;
-  movements: number;
-  interestRate?: number;
-  transactions: Transaction[];
-}
+const escapeCsv = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 export default function Accounts() {
   const navigate = useNavigate();
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
-  const [balanceVisibility, setBalanceVisibility] = useState<Record<string, boolean>>({});
-  const [filterFromDate, setFilterFromDate] = useState<string>('');
-  const [filterToDate, setFilterToDate] = useState<string>('');
-  const [accounts, setAccounts] = useState<LocalAccount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const initialAccount = (location.state as LocationState | null)?.accountNumber || '';
+  const session = sessionService.get();
+  const customerUuid = session?.profile.customerUuid || '';
+  const canTransfer = session?.profile.scopes.includes('core.account.transfer.p2p') ?? false;
 
-  const customerId = 'CUST-001';
+  const [accounts, setAccounts] = useState<AccountResponse[]>([]);
+  const [selectedAccountNumber, setSelectedAccountNumber] = useState(initialAccount);
+  const [transactions, setTransactions] = useState<TransactionResponse[]>([]);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
+  const [showBalances, setShowBalances] = useState(true);
 
-  // Datos mock de transacciones para cada cuenta
-  const mockTransactions: Record<string, Transaction[]> = {
-    '1234567890124521': [
-      {
-        id: 1,
-        date: '28 May 2026',
-        description: 'Transferencia P2P - Ana García López',
-        reference: 'TRF-2026-0528-001',
-        amount: -250.00,
-        balance: 5230.50,
-        status: 'Completada',
-      },
-      {
-        id: 2,
-        date: '27 May 2026',
-        description: 'Depósito Nómina - Empresa XYZ S.A.',
-        reference: 'NOM-2026-0527-001',
-        amount: 3500.00,
-        balance: 5480.50,
-        status: 'Completada',
-      },
-      {
-        id: 3,
-        date: '26 May 2026',
-        description: 'Pago Servicios',
-        reference: 'SRV-2026-0526-001',
-        amount: -85.00,
-        balance: 1980.50,
-        status: 'Completada',
-      },
-      {
-        id: 4,
-        date: '25 May 2026',
-        description: 'Compra en Línea',
-        reference: 'COM-2026-0525-001',
-        amount: -124.50,
-        balance: 2065.50,
-        status: 'Completada',
-      },
-      {
-        id: 5,
-        date: '24 May 2026',
-        description: 'Retiro ATM - Sucursal Centro',
-        reference: 'ATM-2026-0524-001',
-        amount: -300.00,
-        balance: 2190.00,
-        status: 'Completada',
-      },
-    ],
-    '1234567890127823': [
-      {
-        id: 1,
-        date: '28 May 2026',
-        description: 'Transferencia desde Cuenta Corriente',
-        reference: 'TRF-2026-0528-002',
-        amount: 500.00,
-        balance: 12840.00,
-        status: 'Completada',
-      },
-      {
-        id: 2,
-        date: '25 May 2026',
-        description: 'Rendimiento Mensual',
-        reference: 'INT-2026-0525-001',
-        amount: 45.80,
-        balance: 12340.00,
-        status: 'Completada',
-      },
-      {
-        id: 3,
-        date: '20 May 2026',
-        description: 'Depósito en Efectivo',
-        reference: 'DEP-2026-0520-001',
-        amount: 1000.00,
-        balance: 12294.20,
-        status: 'Completada',
-      },
-    ],
-  };
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.accountNumber === selectedAccountNumber),
+    [accounts, selectedAccountNumber],
+  );
 
-  // Cargar cuentas del API
-  const fetchAccounts = async () => {
-    setLoading(true);
-    setError(null);
+  const loadAccounts = async () => {
+    setLoadingAccounts(true);
+    setError('');
     try {
-      const response = await apiService.getAccounts(customerId);
-      
-      // Convertir cuentas del API a formato local
-      const localAccounts: LocalAccount[] = response.accounts.map((acc, index) => ({
-        id: index + 1,
-        accountNumber: acc.accountNumber,
-        accountType: acc.accountType,
-        balance: acc.balance,
-        availableBalance: acc.availableBalance,
-        currency: acc.currency,
-        status: acc.status,
-        holderName: acc.holderName,
-        icon: acc.accountType === 'SAVINGS' ? <Savings /> : <AccountBalance />,
-        color: acc.accountType === 'SAVINGS' ? '#D4AF37' : '#0f3460',
-        movements: 0, // Se actualizará al cargar transacciones
-        interestRate: acc.accountType === 'SAVINGS' ? 4.5 : undefined,
-        transactions: [], // Se cargarán después
-      }));
-
-      setAccounts(localAccounts);
-      if (!selectedAccount && localAccounts.length > 0) {
-        setSelectedAccount(localAccounts[0].accountNumber);
-        // Cargar transacciones de la primera cuenta
-        await fetchTransactions(localAccounts[0].accountNumber);
-      }
-    } catch (err) {
-      setError('Error al cargar las cuentas');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchTransactions = async (accountNumber: string) => {
-    try {
-      const { accountService } = await import('../services/account.service');
-      const transactions = await accountService.getAccountTransactions({
-        accountNumber,
-        limit: 10,
-      });
-      
-      // Mapear transacciones al formato local
-      const localTransactions = transactions.map((txn, index) => ({
-        id: index + 1,
-        date: txn.date || new Date().toISOString(),
-        description: txn.description || 'Transacción',
-        reference: txn.reference || '',
-        amount: txn.amount || 0,
-        balance: txn.balance || 0,
-        status: txn.status || 'PENDIENTE',
-      }));
-      
-      // Actualizar la cuenta con las transacciones
-      setAccounts(prevAccounts => 
-        prevAccounts.map(acc => 
-          acc.accountNumber === accountNumber 
-            ? { ...acc, transactions: localTransactions, movements: localTransactions.length }
-            : acc
-        )
+      const data = await accountService.getAccountsByCustomer(customerUuid, { includeBalance: true });
+      setAccounts(data);
+      setSelectedAccountNumber((current) =>
+        data.some((account) => account.accountNumber === current)
+          ? current
+          : data[0]?.accountNumber || '',
       );
-    } catch (err) {
-      console.error('Error fetching transactions:', err);
+    } catch (requestError) {
+      setError(getFriendlyApiError(requestError));
+    } finally {
+      setLoadingAccounts(false);
     }
   };
 
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
-
-  useEffect(() => {
-    if (selectedAccount) {
-      fetchTransactions(selectedAccount);
+  const loadTransactions = async (filters = { from: fromDate, to: toDate }) => {
+    if (!selectedAccountNumber) return;
+    if (filters.from && filters.to && filters.from > filters.to) {
+      setError('La fecha inicial no puede ser posterior a la fecha final.');
+      return;
     }
-  }, [selectedAccount]);
 
-  const toggleBalanceVisibility = (accountId: string) => {
-    setBalanceVisibility(prev => ({
-      ...prev,
-      [accountId]: !prev[accountId]
-    }));
+    setLoadingTransactions(true);
+    setError('');
+    try {
+      const data = await accountService.getTransactions({
+        accountNumber: selectedAccountNumber,
+        limit: 100,
+        fromDate: filters.from || undefined,
+        toDate: filters.to || undefined,
+      });
+      setTransactions(data);
+    } catch (requestError) {
+      setTransactions([]);
+      setError(getFriendlyApiError(requestError));
+    } finally {
+      setLoadingTransactions(false);
+    }
   };
 
-  const isBalanceVisible = (accountId: string) => {
-    return balanceVisibility[accountId] !== false;
+  const clearFilters = async () => {
+    setFromDate('');
+    setToDate('');
+    await loadTransactions({ from: '', to: '' });
   };
 
-  const formatAccountNumber = (accountNumber: string) => {
-    const lastFour = accountNumber.slice(-4);
-    return `Nº ********${lastFour}`;
-  };
+  useEffect(() => {
+    void loadAccounts();
+  }, [customerUuid]);
 
-  const getFilteredTransactions = (account: LocalAccount) => {
-    if (!filterFromDate && !filterToDate) return account.transactions;
-    
-    return account.transactions.filter((t: Transaction) => {
-      const transactionDate = new Date(t.date);
-      
-      if (filterFromDate) {
-        const fromDate = new Date(filterFromDate);
-        if (transactionDate < fromDate) return false;
-      }
-      
-      if (filterToDate) {
-        const toDate = new Date(filterToDate);
-        // Establecer la hora al final del día para incluir la fecha seleccionada
-        toDate.setHours(23, 59, 59, 999);
-        if (transactionDate > toDate) return false;
-      }
-      
-      return true;
+  useEffect(() => {
+    if (selectedAccountNumber) void loadTransactions({ from: '', to: '' });
+  }, [selectedAccountNumber]);
+
+  const exportTransactions = () => {
+    if (!selectedAccount || transactions.length === 0) return;
+    const headers = [
+      'Fecha',
+      'Hora',
+      'Fecha contable',
+      'Tipo de movimiento',
+      'Descripción',
+      'Concepto o referencia',
+      'Monto débito',
+      'Monto crédito',
+      'Saldo posterior',
+      'Estado',
+      'Canal',
+      'Cuenta',
+      'Referencia técnica',
+    ];
+    const rows = transactions.map((transaction) => {
+      const isCredit = transaction.type === 'CREDIT' || transaction.movementType === 'CREDITO';
+      const amount = Math.abs(transaction.amount);
+      return [
+        formatDateOnly(transaction.date),
+        formatTimeOnly(transaction.date),
+        transaction.accountingDate ? formatDateOnly(transaction.accountingDate) : '',
+        getMovementTypeLabel(transaction),
+        getTransactionLabel(transaction),
+        transaction.reference || '',
+        isCredit ? '' : amount.toFixed(2),
+        isCredit ? amount.toFixed(2) : '',
+        transaction.balance !== undefined ? transaction.balance.toFixed(2) : '',
+        humanizeStatus(transaction.status),
+        getTransactionChannelLabel(transaction),
+        maskAccountNumber(selectedAccount.accountNumber).replace('N.º ', ''),
+        transaction.transactionUuid,
+      ];
     });
+    const csv = [headers, ...rows].map((row) => row.map(escapeCsv).join(';')).join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const period = fromDate || toDate ? `${fromDate || 'inicio'}-a-${toDate || 'hoy'}` : 'todos';
+    anchor.href = url;
+    anchor.download = `movimientos-${selectedAccount.accountNumber.slice(-4)}-${period}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
-  const getSelectedAccount = () => accounts.find(a => a.accountNumber === selectedAccount);
+  const status = selectedAccount ? getStatusPresentation(selectedAccount.status) : null;
+  const selectedProduct = selectedAccount ? getAccountProductLabel(selectedAccount) : undefined;
+  const selectedPurpose = selectedAccount ? getAccountPurposeLabel(selectedAccount) : undefined;
+  const selectedBranch = selectedAccount ? getAccountBranchLabel(selectedAccount) : undefined;
 
   return (
     <Layout>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700, color: '#0f3460', mb: 1 }}>
-          Mis Cuentas
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#666' }}>
-          Administra y consulta tus productos bancarios
-        </Typography>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 850, color: '#123f70', mb: 0.5 }}>Mis cuentas</Typography>
+          <Typography color="text.secondary">Selecciona una cuenta para revisar su información y movimientos.</Typography>
+        </Box>
+        <Button startIcon={<Refresh />} onClick={loadAccounts} disabled={loadingAccounts}>Actualizar cuentas</Button>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-          <CircularProgress sx={{ color: '#0f3460' }} />
-        </Box>
+      {loadingAccounts ? (
+        <Card><CardContent><Skeleton height={34} width="30%" /><Skeleton height={210} /></CardContent></Card>
+      ) : accounts.length === 0 ? (
+        <Alert severity="info">No se encontraron cuentas asociadas a tu perfil.</Alert>
       ) : (
         <>
-        <Box sx={{ display: 'flex', gap: 3, overflowX: 'auto', pb: 2 }}>
-        {accounts.map((account, index) => (
-          <Box
-            key={account.accountNumber}
-            sx={{
-              minWidth: 300,
-              flex: '0 0 auto',
-              p: 3,
-              borderRadius: 3,
-              background: `linear-gradient(135deg, ${account.color} 0%, ${account.color}dd 100%)`,
-              color: 'white',
-              cursor: 'pointer',
-              border: selectedAccount === account.accountNumber ? '3px solid #D4AF37' : '3px solid transparent',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-              },
-            }}
-            onClick={() => setSelectedAccount(account.accountNumber)}
-          >
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <Box
-                  sx={{
-                    p: 1.5,
-                    borderRadius: 2,
-                    bgcolor: 'rgba(255,255,255,0.2)',
-                    mr: 2,
-                  }}
-                >
-                  {account.icon}
-                </Box>
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  {account.accountType === 'CHECKING' ? 'Cuenta Corriente' :
-                   account.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                   account.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : account.accountType}
-                </Typography>
-              </Box>
-
-              <Typography variant="caption" sx={{ opacity: 0.9, display: 'block', mb: 0.5 }}>
-                Número de Cuenta
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 2 }}>
-                {formatAccountNumber(account.accountNumber)}
-              </Typography>
-
-              <Divider sx={{ bgcolor: 'rgba(255,255,255,0.2)', mb: 3 }} />
-
-              <Typography variant="caption" sx={{ opacity: 0.9, display: 'block', mb: 1 }}>
-                Saldo Disponible
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                  {isBalanceVisible(account.accountNumber)
-                    ? `$${account.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
-                    : '$ •••••••'
-                  }
-                </Typography>
-                <IconButton
-                  size="small"
-                  onClick={() => toggleBalanceVisibility(account.accountNumber)}
-                  sx={{ color: 'white' }}
-                >
-                  {isBalanceVisible(account.accountNumber) ? (
-                    <Visibility fontSize="small" />
-                  ) : (
-                    <VisibilityOff fontSize="small" />
-                  )}
-                </IconButton>
-              </Box>
-              <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                USD
-              </Typography>
-
-              {account.interestRate && (
-                <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.15)' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <TrendingUp sx={{ fontSize: 16 }} />
-                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                      {account.interestRate}% Tasa Anual
-                    </Typography>
-                  </Box>
-                </Box>
-              )}
-
-              <Box sx={{ display: 'flex', gap: 1.5, mt: 3 }}>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  endIcon={<ArrowForward fontSize="small" />}
-                  onClick={() => navigate('/transferencias')}
-                  sx={{
-                    bgcolor: '#D4AF37',
-                    color: '#0f3460',
-                    fontWeight: 600,
-                    '&:hover': {
-                      bgcolor: '#B89928',
-                    },
-                  }}
-                >
-                  Transferir
-                </Button>
-                <IconButton
-                  sx={{
-                    bgcolor: 'rgba(255,255,255,0.2)',
-                    color: 'white',
-                    '&:hover': {
-                      bgcolor: 'rgba(255,255,255,0.3)',
-                    },
-                  }}
-                >
-                  <Download />
-                </IconButton>
-              </Box>
-            </Box>
-        ))}
-        </Box>
-
-      {/* Información Detallada de la Cuenta Seleccionada */}
-      {getSelectedAccount() && (
-        <Grid size={12} sx={{ mt: 3 }}>
-          <Card sx={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid #f0f0f0' }}>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                <Box
-                  sx={{
-                    p: 1.5,
-                    borderRadius: 2,
-                    bgcolor: `${getSelectedAccount()!.color}15`,
-                    mr: 2,
-                  }}
-                >
-                  {getSelectedAccount()!.icon}
-                </Box>
+          <Card sx={{ border: '1px solid #e5e7eb', mb: 3 }}>
+            <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2, mb: 2 }}>
                 <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f3460' }}>
-                    {getSelectedAccount()!.accountType === 'CHECKING' ? 'Cuenta Corriente' :
-                     getSelectedAccount()!.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                     getSelectedAccount()!.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : getSelectedAccount()!.accountType}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#666' }}>
-                    {formatAccountNumber(getSelectedAccount()!.accountNumber)}
+                  <Typography variant="h6" fontWeight={850}>Tus productos</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {accounts.length} {accounts.length === 1 ? 'cuenta asociada' : 'cuentas asociadas'} a tu perfil.
                   </Typography>
                 </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Tooltip title={showBalances ? 'Ocultar saldos' : 'Mostrar saldos'}>
+                    <IconButton onClick={() => setShowBalances((current) => !current)} aria-label={showBalances ? 'Ocultar saldos' : 'Mostrar saldos'}>
+                      {showBalances ? <Visibility /> : <VisibilityOff />}
+                    </IconButton>
+                  </Tooltip>
+                  <ToggleButtonGroup
+                    size="small"
+                    exclusive
+                    value={viewMode}
+                    onChange={(_, value) => value && setViewMode(value)}
+                    aria-label="Vista de cuentas"
+                  >
+                    <ToggleButton value="cards" aria-label="Vista de tarjetas"><ViewAgenda fontSize="small" /></ToggleButton>
+                    <ToggleButton value="list" aria-label="Vista de lista"><ViewList fontSize="small" /></ToggleButton>
+                  </ToggleButtonGroup>
+                </Stack>
               </Box>
 
-              <Grid container spacing={3}>
-                <Grid size={{ xs: 12, md: 3 }}>
-                  <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                      <AccountBalanceWallet sx={{ fontSize: 18, color: '#0f3460' }} />
-                      <Typography variant="caption" sx={{ color: '#666', fontWeight: 600 }}>
-                        Saldo Actual
-                      </Typography>
-                    </Box>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: '#0f3460' }}>
-                      ${getSelectedAccount()!.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </Typography>
-                  </Box>
-                </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
-                  <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                      <Info sx={{ fontSize: 18, color: '#0f3460' }} />
-                      <Typography variant="caption" sx={{ color: '#666', fontWeight: 600 }}>
-                        Tipo de Cuenta
-                      </Typography>
-                    </Box>
-                    <Typography variant="body1" sx={{ fontWeight: 600, color: '#0f3460' }}>
-                      {getSelectedAccount()!.accountType === 'CHECKING' ? 'Cuenta Corriente' :
-                       getSelectedAccount()!.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                       getSelectedAccount()!.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : getSelectedAccount()!.accountType}
-                    </Typography>
-                  </Box>
-                </Grid>
-                <Grid size={{ xs: 12, md: 3 }}>
-                  <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                      <CalendarToday sx={{ fontSize: 18, color: '#0f3460' }} />
-                      <Typography variant="caption" sx={{ color: '#666', fontWeight: 600 }}>
-                        Total Movimientos
-                      </Typography>
-                    </Box>
-                    <Typography variant="body1" sx={{ fontWeight: 600, color: '#0f3460' }}>
-                      {getSelectedAccount()!.movements}
-                    </Typography>
-                  </Box>
-                </Grid>
-                {getSelectedAccount()!.interestRate && (
-                  <Grid size={{ xs: 12, md: 3 }}>
-                    <Box sx={{ p: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
-                        <TrendingUp sx={{ fontSize: 18, color: '#D4AF37' }} />
-                        <Typography variant="caption" sx={{ color: '#666', fontWeight: 600 }}>
-                          Tasa Anual
-                        </Typography>
-                      </Box>
-                      <Typography variant="body1" sx={{ fontWeight: 600, color: '#D4AF37' }}>
-                        {getSelectedAccount()!.interestRate}%
-                      </Typography>
-                    </Box>
-                  </Grid>
-                )}
-              </Grid>
+              {viewMode === 'cards' ? (
+                <AccountRail
+                  accounts={accounts}
+                  selectedAccountNumber={selectedAccountNumber}
+                  showBalances={showBalances}
+                  onSelect={(account) => setSelectedAccountNumber(account.accountNumber)}
+                />
+              ) : (
+                <TableContainer sx={{ border: '1px solid #edf0f4', borderRadius: 2 }}>
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: '#f6f8fb' }}>
+                      <TableRow>
+                        <TableCell>Cuenta</TableCell>
+                        <TableCell>Producto / propósito</TableCell>
+                        <TableCell>Estado</TableCell>
+                        <TableCell align="right">Saldo disponible</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {accounts.map((account) => {
+                        const accountStatus = getStatusPresentation(account.status);
+                        const product = getAccountProductLabel(account) || getAccountPurposeLabel(account) || 'Cuenta bancaria';
+                        const selected = account.accountNumber === selectedAccountNumber;
+                        return (
+                          <TableRow
+                            key={account.accountNumber}
+                            hover
+                            selected={selected}
+                            onClick={() => setSelectedAccountNumber(account.accountNumber)}
+                            sx={{ cursor: 'pointer' }}
+                          >
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={800}>{getAccountLabel(account)}</Typography>
+                              <AccountNumberDisplay value={account.accountNumber} />
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">{product}</Typography>
+                              <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.5 }}>
+                                {account.favoritePaymentAccount && <Chip label="Favorita" size="small" variant="outlined" color="warning" />}
+                                {account.massPaymentMainAccount && <Chip label="Cuenta matriz" size="small" variant="outlined" color="primary" />}
+                              </Stack>
+                            </TableCell>
+                            <TableCell><Chip label={accountStatus.label} size="small" sx={{ color: accountStatus.color, bgcolor: accountStatus.background, fontWeight: 750 }} /></TableCell>
+                            <TableCell align="right"><Typography fontWeight={850}>{showBalances ? formatCurrency(account.availableBalance) : '$ ••••••'}</Typography></TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
             </CardContent>
           </Card>
-        </Grid>
-      )}
 
-      <Grid size={12} sx={{ mt: 3 }}>
-        <Card sx={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)', borderRadius: 3, border: '1px solid #f0f0f0' }}>
-          <CardContent sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#0f3460' }}>
-                Movimientos - {accounts.find(a => a.accountNumber === selectedAccount)?.accountType === 'CHECKING' ? 'Cuenta Corriente' :
-                 accounts.find(a => a.accountNumber === selectedAccount)?.accountType === 'SAVINGS' ? 'Cuenta de Ahorros' :
-                 accounts.find(a => a.accountNumber === selectedAccount)?.accountType === 'CREDIT' ? 'Tarjeta de Crédito' : accounts.find(a => a.accountNumber === selectedAccount)?.accountType}
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                <TextField
-                  type="date"
-                  size="small"
-                  label="Desde"
-                  value={filterFromDate}
-                  onChange={(e) => setFilterFromDate(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                  sx={{ minWidth: 160 }}
-                />
-                <TextField
-                  type="date"
-                  size="small"
-                  label="Hasta"
-                  value={filterToDate}
-                  onChange={(e) => setFilterToDate(e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                  sx={{ minWidth: 160 }}
-                />
-                <Button
-                  size="small"
-                  onClick={() => {
-                    setFilterFromDate('');
-                    setFilterToDate('');
-                  }}
-                  sx={{
-                    color: '#666',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                  }}
-                >
-                  Limpiar
-                </Button>
-                <Button
-                  size="small"
-                  startIcon={<Download />}
-                  sx={{
-                    color: '#0f3460',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                  }}
-                >
-                  Exportar
-                </Button>
-              </Box>
-            </Box>
+          {selectedAccount && (
+            <Card sx={{ border: '1px solid #e5e7eb' }}>
+              <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2, mb: 2.5 }}>
+                  <Box>
+                    <Typography variant="h6" fontWeight={850}>{getAccountLabel(selectedAccount)}</Typography>
+                    <AccountNumberDisplay value={selectedAccount.accountNumber} compact={false} />
+                    {(selectedBranch || selectedProduct || selectedPurpose) && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {[selectedBranch ? `Sucursal: ${selectedBranch}` : '', selectedProduct || selectedPurpose || ''].filter(Boolean).join(' · ')}
+                      </Typography>
+                    )}
+                    <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                      {status && <Chip label={status.label} size="small" sx={{ color: status.color, bgcolor: status.background, fontWeight: 750 }} />}
+                      {selectedPurpose && <Chip label={selectedPurpose} size="small" variant="outlined" />}
+                      {selectedAccount.favoritePaymentAccount && <Chip label="Favorita" size="small" variant="outlined" color="warning" />}
+                      {selectedAccount.massPaymentMainAccount && <Chip label="Cuenta matriz" size="small" variant="outlined" color="primary" />}
+                    </Stack>
+                  </Box>
+                  {canTransfer && status?.label === 'Activa' && (
+                    <Button variant="contained" startIcon={<SwapHoriz />} onClick={() => navigate('/transferencias', { state: { sourceAccount: selectedAccount.accountNumber } })} sx={{ bgcolor: '#123f70' }}>
+                      Transferir desde esta cuenta
+                    </Button>
+                  )}
+                </Box>
 
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ bgcolor: '#f8f9fa' }}>
-                    <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Fecha</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: '#0f3460' }}>Descripción</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600, color: '#0f3460' }}>Monto</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600, color: '#0f3460' }}>Saldo</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 600, color: '#0f3460' }}>Estado</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {getSelectedAccount() && getFilteredTransactions(getSelectedAccount()!).map((transaction) => (
-                    <TableRow
-                      key={transaction.id}
-                      sx={{
-                        '&:hover': { bgcolor: '#f8f9fa' },
-                        '&:last-child td': { border: 0 },
-                      }}
-                    >
-                      <TableCell>
-                        <Typography variant="body2" sx={{ color: '#666' }}>
-                          {new Date(transaction.date).toLocaleString('es-ES', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                <Grid container spacing={1.5} sx={{ mb: 3 }}>
+                  {[
+                    ['Saldo contable', selectedAccount.accountingBalance],
+                    ['Fondos retenidos', selectedAccount.withheldAmount || 0],
+                    ['Saldo disponible', selectedAccount.availableBalance],
+                  ].map(([label, value]) => (
+                    <Grid key={String(label)} size={{ xs: 12, sm: 4 }}>
+                      <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#f6f8fb', border: '1px solid #edf0f4' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 750 }}>{label}</Typography>
+                        <Typography variant="h6" fontWeight={900} color="#123f70" sx={{ mt: 0.5 }}>
+                          {showBalances ? formatCurrency(Number(value)) : '$ ••••••'}
                         </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#333' }}>
-                          {transaction.description}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              fontWeight: 700,
-                              color: transaction.amount > 0 ? '#D4AF37' : '#333',
-                            }}
-                          >
-                            {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </Typography>
-                          {transaction.amount > 0 ? (
-                            <TrendingUp sx={{ color: '#D4AF37', fontSize: 16 }} />
-                          ) : (
-                            <TrendingDown sx={{ color: '#999', fontSize: 16 }} />
-                          )}
-                        </Box>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Typography variant="body2" sx={{ color: '#666' }}>
-                          ${transaction.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          label={transaction.status}
-                          size="small"
-                          sx={{
-                            bgcolor: '#fef3c7',
-                            color: '#D4AF37',
-                            fontWeight: 600,
-                          }}
-                        />
-                      </TableCell>
-                    </TableRow>
+                      </Box>
+                    </Grid>
                   ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </CardContent>
-        </Card>
-      </Grid>
-      </>
+                </Grid>
+
+                <Divider sx={{ mb: 2.5 }} />
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'flex-end', mb: 2.5 }}>
+                  <TextField label="Desde" type="date" size="small" value={fromDate} onChange={(event) => setFromDate(event.target.value)} InputLabelProps={{ shrink: true }} />
+                  <TextField label="Hasta" type="date" size="small" value={toDate} onChange={(event) => setToDate(event.target.value)} InputLabelProps={{ shrink: true }} />
+                  <Button variant="outlined" onClick={() => loadTransactions()} disabled={loadingTransactions}>Aplicar filtros</Button>
+                  <Button startIcon={<FilterAltOff />} onClick={clearFilters} disabled={loadingTransactions || (!fromDate && !toDate)}>Limpiar filtros</Button>
+                  <Button startIcon={<Download />} onClick={exportTransactions} disabled={transactions.length === 0}>Exportar CSV</Button>
+                  <FormControl size="small" sx={{ minWidth: 220, ml: { md: 'auto' } }}>
+                    <InputLabel>Cuenta consultada</InputLabel>
+                    <Select value={selectedAccountNumber} label="Cuenta consultada" onChange={(event) => setSelectedAccountNumber(event.target.value)}>
+                      {accounts.map((account) => <MenuItem key={account.accountNumber} value={account.accountNumber}>{getAccountLabel(account)} · {account.accountNumber.slice(-4)}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <TableContainer sx={{ border: '1px solid #edf0f4', borderRadius: 2 }}>
+                  <Table>
+                    <TableHead sx={{ bgcolor: '#f6f8fb' }}>
+                      <TableRow>
+                        <TableCell>Fecha y hora</TableCell>
+                        <TableCell>Movimiento</TableCell>
+                        <TableCell>Concepto o referencia</TableCell>
+                        <TableCell align="right">Débito</TableCell>
+                        <TableCell align="right">Crédito</TableCell>
+                        <TableCell align="right">Saldo posterior</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {loadingTransactions && Array.from({ length: 4 }).map((_, index) => <TableRow key={index}><TableCell colSpan={6}><Skeleton height={36} /></TableCell></TableRow>)}
+                      {!loadingTransactions && transactions.length === 0 && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>No existen movimientos para los filtros seleccionados.</TableCell></TableRow>}
+                      {!loadingTransactions && transactions.map((transaction) => {
+                        const isCredit = transaction.type === 'CREDIT' || transaction.movementType === 'CREDITO';
+                        const detail = [
+                          getMovementTypeLabel(transaction),
+                          humanizeStatus(transaction.status),
+                          getTransactionChannelLabel(transaction),
+                        ].filter(Boolean).join(' · ');
+                        return (
+                          <TableRow key={transaction.transactionUuid || `${transaction.date}-${transaction.amount}`} hover>
+                            <TableCell sx={{ minWidth: 150 }}>{formatDateTime(transaction.date)}</TableCell>
+                            <TableCell sx={{ minWidth: 190 }}>
+                              <Typography variant="body2" fontWeight={650}>{getTransactionLabel(transaction)}</Typography>
+                              {detail && <Typography variant="caption" color="text.secondary">{detail}</Typography>}
+                            </TableCell>
+                            <TableCell sx={{ minWidth: 170 }}>{transaction.reference || '—'}</TableCell>
+                            <TableCell align="right">
+                              {!isCredit ? <Typography fontWeight={800}>-{formatCurrency(Math.abs(transaction.amount))}</Typography> : '—'}
+                            </TableCell>
+                            <TableCell align="right">
+                              {isCredit ? <Typography fontWeight={800} color="success.main">+{formatCurrency(Math.abs(transaction.amount))}</Typography> : '—'}
+                            </TableCell>
+                            <TableCell align="right">{transaction.balance !== undefined ? formatCurrency(transaction.balance) : '—'}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </Layout>
   );

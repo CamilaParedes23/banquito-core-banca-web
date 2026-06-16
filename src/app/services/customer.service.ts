@@ -1,188 +1,42 @@
-// Servicio de Clientes - Customer API
-// Banco BanQuito Core V2
-// Basado en contrato OpenAPI 3.1.0
+import type { CustomerResponse } from '../types/customer.types';
+import { httpService } from './http.service';
 
-import {
-  CustomerResponse,
-  CustomerUpdateRequest,
-} from '../types/customer.types';
-import {
-  API_BASE_URL,
-  USE_MOCK_DATA,
-  CUSTOMER_ENDPOINTS,
-  DEFAULT_HEADERS,
-  DEFAULT_TIMEOUT,
-  HTTP_STATUS,
-} from '../constants/api.constants';
-import { getErrorMessage } from './account.service';
+const compact = (values: Array<string | undefined>): string =>
+  values.filter((value): value is string => Boolean(value?.trim())).join(' ').trim();
 
-/**
- * Helper para simular delay de red (mock)
- */
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-/**
- * Helper para obtener token de autenticación
- */
-const getAuthToken = (): string | null => {
-  return localStorage.getItem('authToken');
-};
-
-/**
- * Helper para hacer fetch con timeout
- */
-const fetchWithTimeout = async (
-  url: string,
-  options: RequestInit = {},
-  timeout: number = DEFAULT_TIMEOUT
-): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
-};
-
-// Datos Mock para desarrollo
-const mockCustomer: CustomerResponse = {
-  uuid: 'cust-uuid-123',
-  identification: '1712345678',
-  names: 'Juan',
-  surnames: 'Díaz García',
-  birthDate: '1990-05-15',
-  email: 'juan.diaz@banquito.com',
-  mobilePhone: '+593 99 123 4567',
-  address: 'Av. Amazonas 123, Quito',
-  type: 'NATURAL',
-  status: 'ACTIVO',
-  subtypeCode: 'PERSONA_NATURAL',
-  createdAt: '2024-01-15T10:30:00Z',
-  updatedAt: '2024-05-30T15:45:00Z',
-};
-
-/**
- * Servicio de Clientes - Customer API
- */
 export const customerService = {
-  /**
-   * GET /customers/{customerUuid}
-   * Consultar cliente por UUID
-   */
-  async getCustomer(customerUuid: string): Promise<CustomerResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(800);
-      return mockCustomer;
-    }
-
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${CUSTOMER_ENDPOINTS.GET_CUSTOMER(customerUuid)}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
+  getCustomer(customerUuid: string): Promise<CustomerResponse> {
+    return httpService.request<CustomerResponse>(`/customers/${encodeURIComponent(customerUuid)}`);
   },
 
-  /**
-   * PATCH /customers/{customerUuid}
-   * Actualizar datos básicos del cliente
-   */
-  async updateCustomer(
-    customerUuid: string,
-    request: CustomerUpdateRequest
-  ): Promise<CustomerResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(1000);
-      // Simular actualización
-      return {
-        ...mockCustomer,
-        ...request,
-        updatedAt: new Date().toISOString(),
-      };
-    }
+  getMassPaymentsEnabled(customer: CustomerResponse): boolean | undefined {
+    if (typeof customer.massPaymentsEnabled === 'boolean') return customer.massPaymentsEnabled;
+    if (typeof customer.massPaymentEnabled === 'boolean') return customer.massPaymentEnabled;
+    if (typeof customer.pagosMasivosHabilitados === 'boolean') return customer.pagosMasivosHabilitados;
 
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${CUSTOMER_ENDPOINTS.UPDATE_CUSTOMER(customerUuid)}`,
-      {
-        method: 'PATCH',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify(request),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
+    const status = (customer.massPaymentsStatus || customer.massPaymentStatus || '').toUpperCase();
+    if (['ENABLED', 'ACTIVE', 'ACTIVO', 'HABILITADO'].includes(status)) return true;
+    if (['DISABLED', 'INACTIVE', 'INACTIVO', 'DESHABILITADO'].includes(status)) return false;
+    return undefined;
   },
 
-  /**
-   * GET /customers/by-identification/{identification}
-   * Buscar cliente por identificación
-   */
-  async getCustomerByIdentification(identification: string): Promise<CustomerResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(800);
-      // Solo retornar si coincide con el mock
-      if (identification === mockCustomer.identification) {
-        return mockCustomer;
-      }
-      throw {
-        response: {
-          status: HTTP_STATUS.NOT_FOUND,
-          data: {
-            code: 'CUSTOMER_NOT_FOUND',
-            message: 'Cliente no encontrado',
-          },
-        },
-      };
-    }
+  getDisplayName(customer: CustomerResponse, fallback: string): string {
+    const naturalName = compact([
+      customer.naturalPerson?.names || customer.names,
+      customer.naturalPerson?.lastNames ||
+        customer.naturalPerson?.surnames ||
+        customer.lastNames ||
+        customer.surnames,
+    ]);
 
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${CUSTOMER_ENDPOINTS.GET_CUSTOMER_BY_IDENTIFICATION(identification)}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
+    return (
+      naturalName ||
+      customer.legalPerson?.legalName ||
+      customer.legalPerson?.businessName ||
+      customer.legalName ||
+      customer.razonSocial ||
+      customer.businessName ||
+      fallback
     );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
   },
 };
-
-export default customerService;

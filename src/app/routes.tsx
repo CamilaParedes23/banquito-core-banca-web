@@ -1,42 +1,46 @@
-import { createBrowserRouter, Navigate } from "react-router";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Accounts from "./pages/Accounts";
-import Transfers from "./pages/Transfers";
-import NotFound from "./pages/NotFound";
-import ProtectedRoute from "./components/ProtectedRoute";
+import { lazy, Suspense } from 'react';
+import { createBrowserRouter } from 'react-router';
+import PageLoader from './components/PageLoader';
+import ProtectedRoute from './components/ProtectedRoute';
+
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Accounts = lazy(() => import('./pages/Accounts'));
+const Transfers = lazy(() => import('./pages/Transfers'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+
+const withSuspense = (element: React.ReactNode) => (
+  <Suspense fallback={<PageLoader />}>{element}</Suspense>
+);
 
 export const router = createBrowserRouter([
+  { path: '/login', element: withSuspense(<Login />) },
   {
-    path: "/login",
-    Component: Login,
-  },
-  {
-    path: "/",
-    element: (
-      <ProtectedRoute>
+    path: '/',
+    element: withSuspense(
+      <ProtectedRoute allowedRoles={['CLIENTE_PERSONA', 'CLIENTE_EMPRESA']}>
         <Dashboard />
-      </ProtectedRoute>
+      </ProtectedRoute>,
     ),
   },
   {
-    path: "/cuentas",
-    element: (
-      <ProtectedRoute>
+    path: '/cuentas',
+    element: withSuspense(
+      <ProtectedRoute allowedRoles={['CLIENTE_PERSONA', 'CLIENTE_EMPRESA']}>
         <Accounts />
-      </ProtectedRoute>
+      </ProtectedRoute>,
     ),
   },
   {
-    path: "/transferencias",
-    element: (
-      <ProtectedRoute>
+    path: '/transferencias',
+    element: withSuspense(
+      <ProtectedRoute
+        allowedRoles={['CLIENTE_PERSONA']}
+        requiredScopes={['core.account.transfer.p2p']}
+      >
         <Transfers />
-      </ProtectedRoute>
+      </ProtectedRoute>,
     ),
   },
-  {
-    path: "*",
-    Component: NotFound,
-  },
+  { path: '*', element: withSuspense(<NotFound />) },
 ]);

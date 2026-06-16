@@ -1,432 +1,242 @@
-// Servicio de Cuentas - Account API
-// Banco BanQuito Core V2
-// Basado en contrato OpenAPI 3.1.0
-
-import {
-  BalanceResponse,
+import type {
+  AccountOwnerResponse,
+  AccountResponse,
   P2PTransferRequest,
   P2PTransferResponse,
-  AccountResponse,
-  AccountOwnerResponse,
-  TransactionsRequest,
   TransactionResponse,
-  ApiError,
+  TransactionsRequest,
 } from '../types/account.types';
-import {
-  API_BASE_URL,
-  USE_MOCK_DATA,
-  ACCOUNT_ENDPOINTS,
-  DEFAULT_HEADERS,
-  DEFAULT_TIMEOUT,
-  API_ERROR_CODES,
-  HTTP_STATUS,
-} from '../constants/api.constants';
+import { ApiError, httpService } from './http.service';
+import { cleanBusinessLabel } from '../utils/formatters';
+import { env } from '../config/env';
 
-/**
- * Helper para simular delay de red (mock)
- */
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const asNumber = (value: unknown): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
 
-/**
- * Helper para obtener mensaje de error amigable
- */
-export const getErrorMessage = (error: any): string => {
-  if (error.response) {
-    const status = error.response.status;
-    const data = error.response.data as ApiError;
+const asOptionalNumber = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
 
-    switch (status) {
-      case HTTP_STATUS.BAD_REQUEST:
-        if (data.code === API_ERROR_CODES.INSUFFICIENT_FUNDS) {
-          return 'Saldo insuficiente para realizar la transferencia.';
-        }
-        if (data.code === API_ERROR_CODES.INVALID_ACCOUNT) {
-          return 'El número de cuenta ingresado no es válido.';
-        }
-        if (data.code === API_ERROR_CODES.ACCOUNT_INACTIVE) {
-          return 'La cuenta destino está inactiva y no puede recibir transferencias.';
-        }
-        if (data.code === API_ERROR_CODES.SAME_ACCOUNT) {
-          return 'No puedes transferir a la misma cuenta de origen.';
-        }
-        if (data.code === API_ERROR_CODES.ACCOUNT_BLOCKED) {
-          return 'La cuenta está bloqueada y no puede realizar operaciones.';
-        }
-        return data.message || 'La solicitud contiene datos inválidos.';
-
-      case HTTP_STATUS.UNAUTHORIZED:
-        return 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.';
-
-      case HTTP_STATUS.FORBIDDEN:
-        return 'No tienes permisos para realizar esta operación.';
-
-      case HTTP_STATUS.NOT_FOUND:
-        return 'La cuenta destino no existe en el sistema.';
-
-      case HTTP_STATUS.INTERNAL_SERVER_ERROR:
-        return 'Error del servidor. Por favor, intenta más tarde.';
-
-      case HTTP_STATUS.SERVICE_UNAVAILABLE:
-        return 'El servicio no está disponible en este momento. Por favor, intenta más tarde.';
-
-      default:
-        return 'Ocurrió un error inesperado. Por favor, contacta a soporte.';
-    }
+const firstText = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
   }
-
-  if (error.request) {
-    return 'No se pudo conectar con el servidor. Verifica tu conexión a internet.';
-  }
-
-  return 'Ocurrió un error inesperado. Por favor, intenta nuevamente.';
+  return undefined;
 };
 
-/**
- * Helper para obtener token de autenticación
- */
-const getAuthToken = (): string | null => {
-  return localStorage.getItem('access_token');
+const normalizeAccount = (raw: Record<string, unknown>): AccountResponse => ({
+  accountUuid: String(raw.accountUuid ?? raw.uuid ?? ''),
+  accountNumber: String(raw.accountNumber ?? raw.numeroCuenta ?? ''),
+  customerUuid: String(raw.customerUuid ?? raw.clienteUuid ?? ''),
+  identification: firstText(raw.identification, raw.identificacion),
+  holderName: String(raw.holderName ?? raw.nombreTitular ?? ''),
+  branchCode: firstText(raw.branchCode, raw.codigoSucursal),
+  branchName: firstText(
+    raw.branchName,
+    raw.branchDescription,
+    raw.sucursalNombre,
+    raw.nombreSucursal,
+  ),
+  subtypeCode: firstText(raw.subtypeCode, raw.codigoSubtipo),
+  subtypeName: firstText(
+    raw.subtypeName,
+    raw.accountSubtypeName,
+    raw.subtypeDescription,
+    raw.nombreSubtipo,
+  ),
+  productName: firstText(raw.productName, raw.productDescription, raw.nombreProducto),
+  status: String(raw.status ?? raw.estado ?? ''),
+  accountingBalance: asNumber(raw.accountingBalance ?? raw.saldoContable),
+  availableBalance: asNumber(raw.availableBalance ?? raw.saldoDisponible),
+  withheldAmount: asNumber(raw.withheldAmount ?? raw.retainedAmount ?? raw.montoRetenido),
+  favoritePaymentAccount: Boolean(raw.favoritePaymentAccount ?? raw.isFavorite),
+  massPaymentMainAccount: Boolean(raw.massPaymentMainAccount),
+  accountPurpose: firstText(raw.accountPurpose, raw.propositoCuenta),
+  accountPurposeName: firstText(
+    raw.accountPurposeName,
+    raw.purposeDescription,
+    raw.nombreProposito,
+  ),
+  operationalAlias: firstText(raw.operationalAlias, raw.aliasOperativo),
+});
+
+const normalizeTransaction = (raw: Record<string, unknown>): TransactionResponse => {
+  const movementType = String(raw.movementType ?? raw.type ?? raw.tipoMovimiento ?? '');
+  const type =
+    movementType === 'CREDITO'
+      ? 'CREDIT'
+      : movementType === 'DEBITO'
+        ? 'DEBIT'
+        : movementType;
+  const subtypeName = firstText(
+    raw.subtypeName,
+    raw.transactionSubtypeName,
+    raw.subtypeDescription,
+    raw.nombreSubtipo,
+  );
+  const rawDescription = firstText(raw.description, raw.descripcion);
+  const businessDescription = cleanBusinessLabel(rawDescription) || cleanBusinessLabel(subtypeName);
+
+  return {
+    transactionUuid: String(raw.transactionUuid ?? raw.uuidTransaccion ?? raw.uuid ?? ''),
+    date: String(raw.timestamp ?? raw.date ?? raw.fechaTransaccion ?? raw.accountingDate ?? ''),
+    description: businessDescription || '',
+    subtypeName,
+    reference: firstText(raw.reference, raw.referencia, raw.externalReference),
+    amount: asNumber(raw.amount ?? raw.monto),
+    balance: asOptionalNumber(raw.balance ?? raw.saldoResultante ?? raw.resultingAvailableBalance),
+    status: firstText(raw.status, raw.estado),
+    type,
+    movementType,
+    subtypeCode: firstText(raw.subtypeCode, raw.codigoSubtipo),
+    accountingDate: firstText(raw.accountingDate, raw.fechaContable),
+    channel: firstText(raw.channelName, raw.channel, raw.originChannel, raw.canalOrigen),
+    accountNumber: firstText(raw.accountNumber, raw.numeroCuenta),
+  };
 };
 
-/**
- * Helper para hacer fetch con timeout
- */
-const fetchWithTimeout = async (
-  url: string,
-  options: RequestInit = {},
-  timeout: number = DEFAULT_TIMEOUT
-): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
+const dateOnly = (value: string): string => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  return date.toISOString().slice(0, 10);
 };
 
-// Datos Mock para desarrollo
-const mockBalance: BalanceResponse = {
-  accountingBalance: 5230.50,
-  availableBalance: 5230.50,
-  retainedAmount: 0,
-  currency: 'USD',
-};
-
-const mockAccount: AccountResponse = {
-  accountNumber: '3001234521',
-  accountType: 'CHECKING',
-  accountSubtypeCode: 'CORRIENTE',
-  balance: 5230.50,
-  availableBalance: 5230.50,
-  currency: 'USD',
-  status: 'ACTIVA',
-  holderName: 'Juan Díaz García',
-  customerUuid: 'cust-uuid-123',
-  branchCode: '001',
-  createdAt: '2024-01-15T10:30:00Z',
-};
-
-const mockAccountOwner: AccountOwnerResponse = {
-  accountNumber: '9876543210',
-  holderName: 'Ana García López',
-  identification: '1712345678',
-  status: 'ACTIVA',
-  customerUuid: 'cust-uuid-456',
-};
-
-const mockTransactions: TransactionResponse[] = [
-  {
-    transactionUuid: 'txn-uuid-1',
-    date: '2024-05-30',
-    description: 'Transferencia recibida',
-    reference: 'TRF-2024-05-30-001',
-    amount: 500.00,
-    balance: 5230.50,
-    status: 'COMPLETED',
-    type: 'CREDIT',
-  },
-  {
-    transactionUuid: 'txn-uuid-2',
-    date: '2024-05-29',
-    description: 'Pago de servicios',
-    reference: 'PAGO-2024-05-29-001',
-    amount: -150.00,
-    balance: 4730.50,
-    status: 'COMPLETED',
-    type: 'DEBIT',
-  },
-  {
-    transactionUuid: 'txn-uuid-3',
-    date: '2024-05-28',
-    description: 'Depósito en efectivo',
-    reference: 'DEP-2024-05-28-001',
-    amount: 1000.00,
-    balance: 4880.50,
-    status: 'COMPLETED',
-    type: 'CREDIT',
-  },
-];
-
-/**
- * Servicio de Cuentas - Account API
- */
 export const accountService = {
-  /**
-   * GET /accounts/{accountNumber}/balance
-   * Consultar saldo contable y disponible
-   */
-  async getAccountBalance(accountNumber: string): Promise<BalanceResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(800);
-      return mockBalance;
+  async getAccountsByCustomer(
+    customerUuid: string,
+    filters: {
+      status?: string;
+      onlyTransferable?: boolean;
+      purpose?: string;
+      includeBalance?: boolean;
+    } = {},
+  ): Promise<AccountResponse[]> {
+    const params = new URLSearchParams();
+    if (filters.status) params.set('status', filters.status);
+    if (filters.onlyTransferable !== undefined) {
+      params.set('onlyTransferable', String(filters.onlyTransferable));
     }
+    if (filters.purpose) params.set('purpose', filters.purpose);
+    params.set('includeBalance', String(filters.includeBalance ?? true));
 
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.GET_ACCOUNT_BALANCE(accountNumber)}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
+    const data = await httpService.request<unknown[]>(
+      `/accounts/by-customer/${encodeURIComponent(customerUuid)}?${params.toString()}`,
     );
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
+    return Array.isArray(data)
+      ? data.map((item) => normalizeAccount(item as Record<string, unknown>))
+      : [];
   },
 
-  /**
-   * GET /accounts/{accountNumber}
-   * Consultar cuenta por número
-   */
   async getAccount(accountNumber: string): Promise<AccountResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(800);
-      return mockAccount;
-    }
-
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.GET_ACCOUNT(accountNumber)}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
+    const data = await httpService.request<Record<string, unknown>>(
+      `/accounts/${encodeURIComponent(accountNumber)}`,
     );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
+    return normalizeAccount(data);
   },
 
   /**
-   * GET /accounts/by-customer/{customerUuid}
-   * Listar cuentas por cliente
+   * Usa el endpoint existente GET /accounts/{accountNumber} mientras el endpoint
+   * específico de validación segura de beneficiario permanezca pendiente.
    */
-  async getAccountsByCustomer(customerUuid: string, status?: string, onlyTransferable?: boolean, includeBalance?: boolean): Promise<AccountResponse[]> {
-    if (USE_MOCK_DATA) {
-      await delay(800);
-      return [mockAccount];
-    }
-
-    const token = getAuthToken();
-    const params = new URLSearchParams();
-    if (status) params.append('status', status);
-    if (onlyTransferable !== undefined) params.append('onlyTransferable', onlyTransferable.toString());
-    if (includeBalance !== undefined) params.append('includeBalance', includeBalance.toString());
-
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.GET_ACCOUNTS_BY_CUSTOMER(customerUuid)}${params.toString() ? `?${params.toString()}` : ''}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
-  },
-
-  /**
-   * GET /accounts/{accountNumber}/transactions
-   * Consultar últimos N movimientos
-   */
-  async getAccountTransactions(request: TransactionsRequest): Promise<TransactionResponse[]> {
-    if (USE_MOCK_DATA) {
-      await delay(1000);
-      return mockTransactions;
-    }
-
-    const token = getAuthToken();
-    const params = new URLSearchParams();
-    if (request.limit) params.append('limit', request.limit.toString());
-    if (request.fromDate) params.append('fromDate', request.fromDate);
-    if (request.toDate) params.append('toDate', request.toDate);
-
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.GET_ACCOUNT_TRANSACTIONS(request.accountNumber)}?${params.toString()}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    const transactions = await response.json();
-
-    // Mapeo de subtipos a descripciones amigables
-    const subtypeDescriptions: Record<string, string> = {
-      'TRF_P2P_DEB': 'Transferencia P2P enviada',
-      'TRF_P2P_CRE': 'Transferencia P2P recibida',
-      'DEP_VENTANILLA': 'Depósito en ventanilla',
-      'RET_VENTANILLA': 'Retiro en ventanilla',
-      'APERTURA_CUENTA': 'Apertura de cuenta',
-    };
-
-    // Mapear formato del backend al formato local
-    return transactions.map((txn: any) => ({
-      transactionUuid: txn.transactionUuid || txn.uuidTransaccion,
-      date: txn.timestamp || txn.date || txn.fechaTransaccion || txn.accountingDate,
-      description: subtypeDescriptions[txn.subtypeCode] || txn.description || txn.descripcion || 'Transacción',
-      reference: txn.reference || txn.referencia || txn.externalReference,
-      amount: txn.amount || txn.monto,
-      balance: txn.balance || txn.saldoResultante || txn.resultingAvailableBalance,
-      status: txn.status || txn.estado,
-      type: txn.type || txn.tipoMovimiento || txn.movementType === 'CREDITO' ? 'CREDIT' : txn.movementType === 'DEBITO' ? 'DEBIT' : txn.movementType,
-      movementType: txn.movementType || txn.type || txn.tipoMovimiento,
-    }));
-  },
-
-  /**
-   * GET /accounts/{accountNumber}/owner
-   * Consultar titular de cuenta para validación previa
-   */
-  async getAccountOwner(accountNumber: string): Promise<AccountOwnerResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(1000);
-      return mockAccountOwner;
-    }
-
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.GET_ACCOUNT_OWNER(accountNumber)}`,
-      {
-        method: 'GET',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
-    }
-
-    return response.json();
-  },
-
-  /**
-   * POST /accounts/transfers/p2p
-   * Transferencia P2P entre cuentas BanQuito
-   */
-  async transferP2P(request: P2PTransferRequest): Promise<P2PTransferResponse> {
-    if (USE_MOCK_DATA) {
-      await delay(1500);
-
-      // Validar fondos suficientes
-      if (mockBalance.availableBalance < request.amount) {
-        throw {
-          response: {
-            status: HTTP_STATUS.BAD_REQUEST,
-            data: {
-              code: API_ERROR_CODES.INSUFFICIENT_FUNDS,
-              message: 'Fondos insuficientes',
-            },
-          },
-        };
-      }
-
-      // Validar que no sea la misma cuenta
-      if (request.sourceAccountNumber === request.targetAccountNumber) {
-        throw {
-          response: {
-            status: HTTP_STATUS.BAD_REQUEST,
-            data: {
-              code: API_ERROR_CODES.SAME_ACCOUNT,
-              message: 'No puedes transferir a la misma cuenta',
-            },
-          },
-        };
-      }
-
-      // Simular transferencia exitosa
+  async getBeneficiaryPreview(accountNumber: string): Promise<AccountOwnerResponse> {
+    try {
+      const account = await this.getAccount(accountNumber);
       return {
-        transactionUuid: `txn-${Date.now()}`,
-        status: 'COMPLETED',
-        timestamp: new Date().toISOString(),
-        sourceAccountNumber: request.sourceAccountNumber,
-        targetAccountNumber: request.targetAccountNumber,
-        amount: request.amount,
-        newBalance: mockBalance.availableBalance - request.amount,
+        accountNumber: account.accountNumber,
+        holderName: account.holderName || undefined,
+        identification: account.identification,
+        status: account.status,
+        customerUuid: account.customerUuid,
+        verified: true,
       };
-    }
-
-    const token = getAuthToken();
-    const response = await fetchWithTimeout(
-      `${API_BASE_URL}${ACCOUNT_ENDPOINTS.TRANSFER_P2P}`,
-      {
-        method: 'POST',
-        headers: {
-          ...DEFAULT_HEADERS,
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: JSON.stringify(request),
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        return {
+          accountNumber,
+          status: 'PENDING_CORE_VALIDATION',
+          verified: false,
+        };
       }
+      throw error;
+    }
+  },
+
+  async getTransactions(request: TransactionsRequest): Promise<TransactionResponse[]> {
+    const data = await httpService.request<unknown[]>(
+      `/accounts/${encodeURIComponent(request.accountNumber)}/transactions`,
     );
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw { response: { status: response.status, data: errorData } };
+    let transactions = Array.isArray(data)
+      ? data.map((item) => normalizeTransaction(item as Record<string, unknown>))
+      : [];
+
+    // El contrato vigente no expone filtros ni paginación para este endpoint.
+    // Los filtros se aplican localmente hasta que el backend publique esos parámetros.
+    if (request.fromDate) {
+      transactions = transactions.filter((transaction) => dateOnly(transaction.date) >= request.fromDate!);
+    }
+    if (request.toDate) {
+      transactions = transactions.filter((transaction) => dateOnly(transaction.date) <= request.toDate!);
+    }
+    if (request.limit && request.limit > 0) {
+      transactions = transactions.slice(0, request.limit);
     }
 
-    return response.json();
+    return transactions;
+  },
+
+  async transferP2P(
+    request: P2PTransferRequest,
+    idempotencyKey?: string,
+  ): Promise<P2PTransferResponse> {
+    const correlationId = httpService.createRequestId();
+
+    const headers =
+      env.enableP2pIdempotency && idempotencyKey
+        ? { 'Idempotency-Key': idempotencyKey }
+        : undefined;
+
+    const data = await httpService.request<unknown>('/accounts/transfers/p2p', {
+      method: 'POST',
+      body: request,
+      correlationId,
+      headers,
+    });
+
+    const results = (Array.isArray(data) ? data : [data])
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
+    const sourceResult = results.find((item) => {
+      const accountNumber = String(item.accountNumber ?? item.numeroCuenta ?? '');
+      const movement = String(item.movementType ?? item.tipoMovimiento ?? '').toUpperCase();
+      return accountNumber === request.sourceAccountNumber || movement === 'DEBITO' || movement === 'DEBIT';
+    }) || results[0] || {};
+
+    return {
+      transactionUuid: String(
+        sourceResult.transactionUuid ?? sourceResult.uuidTransaccion ?? sourceResult.uuid ?? correlationId,
+      ),
+      status: String(sourceResult.status ?? sourceResult.estado ?? 'PROCESADA'),
+      timestamp: String(
+        sourceResult.timestamp ?? sourceResult.fechaTransaccion ?? new Date().toISOString(),
+      ),
+      sourceAccountNumber: String(
+        sourceResult.accountNumber ?? sourceResult.numeroCuenta ?? request.sourceAccountNumber,
+      ),
+      targetAccountNumber: request.targetAccountNumber,
+      amount: asNumber(sourceResult.amount ?? sourceResult.monto ?? request.amount),
+      fee: asOptionalNumber(sourceResult.fee ?? sourceResult.commission ?? sourceResult.commissionAmount ?? sourceResult.comision),
+      newBalance: asOptionalNumber(
+        sourceResult.resultingAvailableBalance ??
+          sourceResult.availableBalanceAfter ??
+          sourceResult.newBalance ??
+          sourceResult.saldoResultante,
+      ),
+      correlationId,
+    };
   },
 };
-
-export default accountService;

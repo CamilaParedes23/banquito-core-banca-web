@@ -1,88 +1,45 @@
-/**
- * Tipos TypeScript basados en el contrato OpenAPI de Identity Access API
- * Contrato: Banco BanQuito Core V2 - Identity Access API
- */
-
-// ==================== Auth Endpoints ====================
-
-/**
- * Solicitud de login
- */
 export interface LoginRequest {
   username: string;
   password: string;
 }
 
-/**
- * Solicitud de renovación de token
- */
-export interface RefreshTokenRequest {
-  refreshToken: string;
-}
-
-/**
- * Respuesta de autenticación con tokens
- */
 export interface AuthTokenResponse {
   accessToken: string;
-  refreshToken: string;
-  tokenType: string;
-  expiresInSeconds: number;
-  sessionUuid: string;
-  actorUuid: string;
+  refreshToken?: string;
+  tokenType?: string;
+  expiresInSeconds?: number;
+  expiresIn?: number;
+  sessionUuid?: string;
+  actorUuid?: string;
+  actorType?: string;
+  roles?: string[];
+  scopes?: string[];
+  subject?: string;
+  username?: string;
+  referenceUuid?: string;
+  referenceType?: string;
+  customerUuid?: string;
+  requiresPasswordChange?: boolean;
+}
+
+export interface AuthenticatedProfile {
+  subject: string;
+  username: string;
   actorType: string;
+  clientId?: string | null;
   roles: string[];
   scopes: string[];
+  referenceUuid?: string | null;
+  referenceType?: string | null;
+  customerUuid?: string | null;
+  requiresPasswordChange?: boolean;
 }
 
-// ==================== IAM Users (No usado en frontend) ====================
-
-/**
- * Solicitud de creación de usuario de identidad
- */
-export interface IdentityUserCreateRequest {
-  username: string;
-  email?: string;
-  password?: string;
-  userType: 'CLIENTE' | 'EMPLEADO' | 'SERVICIO';
-  externalReferenceUuid?: string;
-}
-
-/**
- * Respuesta de usuario de identidad
- */
-export interface IdentityUserResponse {
-  userUuid: string;
-  username: string;
-  userType: string;
-  status: string;
-}
-
-// ==================== Tipos extendidos para el frontend ====================
-
-/**
- * Datos de sesión almacenados en localStorage
- */
-export interface SessionData {
+export interface StoredSession {
   accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-  expiresAt: number; // Timestamp de expiración
-  scopes: string[];
-  userUuid?: string;
-  username?: string;
-}
-
-/**
- * Estado de autenticación
- */
-export interface AuthState {
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
-  user: {
-    username?: string;
-    userUuid?: string;
-    scopes?: string[];
-  } | null;
+  refreshToken?: string;
+  tokenType: string;
+  expiresAt: number;
+  profile: AuthenticatedProfile;
+  customerName?: string;
 }
