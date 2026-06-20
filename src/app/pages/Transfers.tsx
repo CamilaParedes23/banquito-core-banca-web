@@ -51,7 +51,7 @@ const createIdempotencyKey = (): string =>
   `p2p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const beneficiaryLabel = (beneficiary: AccountOwnerResponse): string =>
-  beneficiary.holderName?.trim() || 'Titular pendiente de validación por el Core';
+  beneficiary.holderName?.trim() || 'Titular no disponible';
 
 export default function Transfers() {
   const location = useLocation();
@@ -153,7 +153,7 @@ export default function Transfers() {
           sourceAccountNumber: selectedAccount.accountNumber,
           targetAccountNumber: beneficiary.accountNumber,
           amount: Number(amount),
-          reference: reference.trim(),
+          description: reference.trim(),
         },
         idempotencyKeyRef.current || undefined,
       );
@@ -191,7 +191,7 @@ export default function Transfers() {
       sourceProduct: getAccountProductLabel(selectedAccount),
       beneficiaryName: beneficiaryLabel(beneficiary),
       targetAccountNumber: beneficiary.accountNumber,
-      targetBank: 'Banco BanQuito',
+      targetBank: beneficiary.institution || 'Banco BanQuito',
       amount: result.amount,
       fee: result.fee ?? 0,
       reference,
@@ -299,10 +299,8 @@ export default function Transfers() {
                   <Grid size={{ xs: 12, md: 6 }}><Typography variant="caption" color="text.secondary">Referencia</Typography><Typography fontWeight={650}>{reference}</Typography></Grid>
                 </Grid>
               </CardContent></Card>
-              <Alert severity={beneficiary.verified ? 'warning' : 'info'} sx={{ mt: 2.5 }}>
-                {beneficiary.verified
-                  ? 'Verifica el beneficiario, el monto y ambos números de cuenta. Usa el ícono del ojo para mostrar el número completo antes de confirmar.'
-                  : 'El Core todavía no expone el titular de cuentas de terceros. Verifica el número completo con el ícono del ojo; el Core validará existencia y estado al confirmar.'}
+              <Alert severity="success" sx={{ mt: 2.5 }}>
+                Beneficiario validado por Banco BanQuito. Revisa el nombre, el monto y ambos números de cuenta antes de confirmar.
               </Alert>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}><Button onClick={() => setStep(0)} disabled={submitting}>Regresar</Button><Button variant="contained" onClick={submitTransfer} disabled={submitting} sx={{ bgcolor: '#123f70' }}>{submitting ? 'Procesando transferencia…' : 'Confirmar transferencia'}</Button></Box>
             </Box>
@@ -359,7 +357,7 @@ export default function Transfers() {
                     </Grid>
                     <Grid size={{ xs: 12 }}>
                       <Typography variant="caption" color="text.secondary">Institución financiera</Typography>
-                      <Typography fontWeight={650}>Banco BanQuito</Typography>
+                      <Typography fontWeight={650}>{beneficiary.institution || 'Banco BanQuito'}</Typography>
                     </Grid>
                   </Grid>
 

@@ -139,31 +139,33 @@ export const accountService = {
     return normalizeAccount(data);
   },
 
-  /**
-   * Usa el endpoint existente GET /accounts/{accountNumber} mientras el endpoint
-   * específico de validación segura de beneficiario permanezca pendiente.
-   */
   async getBeneficiaryPreview(accountNumber: string): Promise<AccountOwnerResponse> {
-    try {
-      const account = await this.getAccount(accountNumber);
-      return {
-        accountNumber: account.accountNumber,
-        holderName: account.holderName || undefined,
-        identification: account.identification,
-        status: account.status,
-        customerUuid: account.customerUuid,
-        verified: true,
-      };
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 403) {
-        return {
-          accountNumber,
-          status: 'PENDING_CORE_VALIDATION',
-          verified: false,
-        };
-      }
-      throw error;
+    const normalizedAccountNumber = accountNumber.trim();
+    const data = await httpService.request<Record<string, unknown>>(
+      '/accounts/transfers/p2p/beneficiary-validation',
+      {
+        method: 'POST',
+        body: { accountNumber: normalizedAccountNumber },
+      },
+    );
+
+    const accountExists = Boolean(data.accountExists);
+    if (!accountExists) {
+      throw new ApiError(
+        'La cuenta destino no existe en Banco BanQuito.',
+        404,
+        'ACCOUNT_NOT_FOUND',
+      );
     }
+
+    return {
+      accountNumber: normalizedAccountNumber,
+      maskedAccountNumber: firstText(data.maskedAccountNumber),
+      holderName: firstText(data.holderDisplayName),
+      status: String(data.accountStatus ?? ''),
+      institution: firstText(data.institution) || 'Banco BanQuito',
+      verified: true,
+    };
   },
 
   async getTransactions(request: TransactionsRequest): Promise<TransactionResponse[]> {

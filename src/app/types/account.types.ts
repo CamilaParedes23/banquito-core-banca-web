@@ -24,10 +24,10 @@ export interface AccountResponse {
 
 export interface AccountOwnerResponse {
   accountNumber: string;
+  maskedAccountNumber?: string;
   holderName?: string;
-  identification?: string;
   status: string;
-  customerUuid?: string;
+  institution?: string;
   verified: boolean;
 }
 
@@ -59,7 +59,7 @@ export interface P2PTransferRequest {
   sourceAccountNumber: string;
   targetAccountNumber: string;
   amount: number;
-  reference?: string;
+  description?: string;
 }
 
 export interface P2PTransferResponse {
