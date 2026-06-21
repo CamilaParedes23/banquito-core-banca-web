@@ -1,8 +1,16 @@
-import type { AuthTokenResponse, LoginRequest } from '../types/auth.types';
+import type { ActivateAccountRequest, AuthTokenResponse, GenericResponse, LoginRequest } from '../types/auth.types';
 import { httpService } from './http.service';
 import { sessionService } from './session.service';
 
 export const authService = {
+  activateAccount(request: ActivateAccountRequest): Promise<GenericResponse> {
+    return httpService.request<GenericResponse>('/auth/activate-account', {
+      method: 'POST',
+      auth: false,
+      body: request,
+    });
+  },
+
   login(credentials: LoginRequest): Promise<AuthTokenResponse> {
     return httpService.request<AuthTokenResponse>('/auth/login', {
       method: 'POST',

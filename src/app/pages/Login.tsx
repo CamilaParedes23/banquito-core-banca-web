@@ -153,6 +153,9 @@ export default function Login() {
               <Button fullWidth type="submit" variant="contained" size="large" disabled={loading} sx={{ minHeight: 52, bgcolor: '#123f70', fontWeight: 750 }}>
                 {loading ? 'Validando acceso…' : 'Ingresar'}
               </Button>
+              <Button fullWidth type="button" variant="text" sx={{ mt: 1.5, color: '#123f70', fontWeight: 700 }} onClick={() => navigate('/activar')}>
+                Activar acceso digital
+              </Button>
             </Box>
           </CardContent>
         </Card>

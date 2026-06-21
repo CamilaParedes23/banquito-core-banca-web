@@ -43,3 +43,13 @@ export interface StoredSession {
   profile: AuthenticatedProfile;
   customerName?: string;
 }
+
+export interface ActivateAccountRequest {
+  token: string;
+  newPassword: string;
+}
+
+export interface GenericResponse {
+  code?: string;
+  message?: string;
+}

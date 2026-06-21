@@ -4,6 +4,7 @@ import PageLoader from './components/PageLoader';
 import ProtectedRoute from './components/ProtectedRoute';
 
 const Login = lazy(() => import('./pages/Login'));
+const ActivateAccount = lazy(() => import('./pages/ActivateAccount'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Accounts = lazy(() => import('./pages/Accounts'));
 const Transfers = lazy(() => import('./pages/Transfers'));
@@ -15,6 +16,7 @@ const withSuspense = (element: React.ReactNode) => (
 
 export const router = createBrowserRouter([
   { path: '/login', element: withSuspense(<Login />) },
+  { path: '/activar', element: withSuspense(<ActivateAccount />) },
   {
     path: '/',
     element: withSuspense(
