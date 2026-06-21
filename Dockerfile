@@ -14,10 +14,8 @@ RUN npm install -g serve
 
 COPY --from=build /app/dist ./dist
 COPY public/env.template.js ./dist/env.template.js
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY docker-entrypoint.js /usr/local/bin/docker-entrypoint.js
 
 EXPOSE 3000
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["serve", "-s", "dist", "-l", "3000"]
+ENTRYPOINT ["node", "/usr/local/bin/docker-entrypoint.js"]
