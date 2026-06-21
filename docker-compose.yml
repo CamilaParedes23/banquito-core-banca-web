@@ -1,0 +1,9 @@
+services:
+  core-banca-web:
+    image: andrescarrillo2001/banquito-core-bancaweb-fronend:latest
+    container_name: banquito-core-bancaweb-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    env_file:
+      - .env
