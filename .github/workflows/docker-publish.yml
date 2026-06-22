@@ -37,8 +37,8 @@ jobs:
 
       - name: Push image
         run: |
-          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:latest
-          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:fix-api-20260621
+          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:prod
+          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:prod
 
       - name: Trigger Infra Deploy
         run: |
