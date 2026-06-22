@@ -113,7 +113,7 @@ export default function Login() {
           <CardContent sx={{ p: { xs: 3, sm: 5 } }}>
             <Box component="img" src="/Baco.png" alt="Banco BanQuito" sx={{ display: 'block', height: 92, maxWidth: '100%', objectFit: 'contain', mx: 'auto', mb: 3 }} />
             <Typography variant="h4" align="center" sx={{ fontWeight: 800, color: '#102b50', mb: 1 }}>
-              Inicia sesión en tus cuentas
+              Inicia sesión en tu cuenta
             </Typography>
             <Typography align="center" color="text.secondary" sx={{ mb: 4 }}>
               Banca Web Personas
