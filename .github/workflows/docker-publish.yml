@@ -8,7 +8,7 @@ on:
 
 jobs:
   docker:
-    runs-on: ubuntu-fix-api-20260621
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -22,11 +22,17 @@ jobs:
 
       - name: Build image
         run: |
-          docker build -t andrescarrillo2001/banquito-core-bancaweb-fronend:fix-api-20260621 .
+          docker build \
+            --build-arg VITE_API_BASE_URL="${{ vars.VITE_API_BASE_URL }}" \
+            --build-arg VITE_REQUEST_TIMEOUT_MS="${{ vars.VITE_REQUEST_TIMEOUT_MS }}" \
+            --build-arg VITE_SESSION_WARNING_SECONDS="${{ vars.VITE_SESSION_WARNING_SECONDS }}" \
+            --build-arg VITE_SWITCH_PORTAL_URL="${{ vars.VITE_SWITCH_PORTAL_URL }}" \
+            --build-arg VITE_ENABLE_P2P_IDEMPOTENCY="${{ vars.VITE_ENABLE_P2P_IDEMPOTENCY }}" \
+            -t andrescarrillo2001/banquito-core-bancaweb-fronend:latest .
 
       - name: Push image
         run: |
-          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:fix-api-20260621
+          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:latest
 
       - name: Trigger Infra Deploy
         run: |
