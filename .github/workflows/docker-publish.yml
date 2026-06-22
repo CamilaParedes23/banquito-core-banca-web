@@ -49,6 +49,6 @@ jobs:
             -d '{
               "event_type": "deploy-core-front",
               "client_payload": {
-                "service": "frontend-switch"
+                "service": "banca-web"
               }
             }'
