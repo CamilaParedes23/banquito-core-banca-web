@@ -6,10 +6,6 @@ on:
     branches:
       - main
 
-env:
-  IMAGE_NAME: andrescarrillo2001/banquito-core-bancaweb-fronend
-  DEPLOY_TAG: fix-api-20260621
-
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -36,13 +32,13 @@ jobs:
             --build-arg VITE_SESSION_WARNING_SECONDS="${{ vars.VITE_SESSION_WARNING_SECONDS }}" \
             --build-arg VITE_SWITCH_PORTAL_URL="${{ vars.VITE_SWITCH_PORTAL_URL }}" \
             --build-arg VITE_ENABLE_P2P_IDEMPOTENCY="${{ vars.VITE_ENABLE_P2P_IDEMPOTENCY }}" \
-            -t ${{ env.IMAGE_NAME }}:latest \
-            -t ${{ env.IMAGE_NAME }}:${{ env.DEPLOY_TAG }} .
+            -t andrescarrillo2001/banquito-core-bancaweb-fronend:latest \
+            -t andrescarrillo2001/banquito-core-bancaweb-fronend:fix-api-20260621 .
 
       - name: Push image
         run: |
-          docker push ${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.IMAGE_NAME }}:${{ env.DEPLOY_TAG }}
+          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:latest
+          docker push andrescarrillo2001/banquito-core-bancaweb-fronend:fix-api-20260621
 
       - name: Trigger Infra Deploy
         run: |
