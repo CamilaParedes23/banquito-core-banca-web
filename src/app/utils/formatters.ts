@@ -7,6 +7,7 @@ export const formatCurrency = (value: number): string =>
     minimumFractionDigits: 2,
   }).format(Number.isFinite(value) ? value : 0);
 
+  
 export const formatDateTime = (value?: string): string => {
   if (!value) return 'Fecha no disponible';
   const date = new Date(value);
